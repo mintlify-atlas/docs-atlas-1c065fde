@@ -1,0 +1,176 @@
+---
+title: "SSL/TLS and certificates"
+description: "How mailcow obtains and manages TLS certificates, including Let's Encrypt, DNS-01 challenges, SNI, and manual certificates."
+---
+
+mailcow includes an `acme-mailcow` container that automatically obtains and renews TLS certificates from Let's Encrypt. By default it uses the HTTP-01 challenge. DNS-01 is also supported for wildcard certificates or environments where port 80 is unavailable.
+
+---
+
+## Automatic Let's Encrypt (HTTP-01)
+
+The ACME container requests a certificate for `MAILCOW_HOSTNAME` plus any names in `ADDITIONAL_SAN` and, when `AUTODISCOVER_SAN=y`, for `autodiscover.*` and `autoconfig.*` subdomains of every mail domain.
+
+<Steps>
+  <Step title="Ensure DNS resolves to your server">
+    The A/AAAA record for `MAILCOW_HOSTNAME` must point to your server's public IP before the ACME container can complete the HTTP-01 challenge. See [DNS configuration](/configuration/dns-setup) for required records.
+  </Step>
+  <Step title="Verify port 80 is reachable">
+    Let's Encrypt must be able to reach `http://MAILCOW_HOSTNAME/.well-known/acme-challenge/`. Ensure port 80 is open in your firewall and not occupied by another service.
+  </Step>
+  <Step title="Leave ACME enabled in mailcow.conf">
+    The default configuration already enables ACME. Confirm these values in `mailcow.conf`:
+
+    ```bash mailcow.conf
+    SKIP_LETS_ENCRYPT=n
+    ACME_DNS_CHALLENGE=n
+    ```
+  </Step>
+  <Step title="Start mailcow">
+    ```bash
+    docker compose up -d
+    ```
+
+    The `acme-mailcow` container will obtain a certificate on first start and renew it automatically before expiry.
+  </Step>
+</Steps>
+
+---
+
+## HTTP-01 vs DNS-01
+
+<Tabs>
+  <Tab title="HTTP-01 (default)">
+    The default challenge type. Let's Encrypt fetches a token over HTTP from your server.
+
+    **Requirements:**
+    - Port 80 must be publicly reachable
+    - DNS must resolve to your server's public IP
+    - Cannot issue wildcard certificates
+
+    ```bash mailcow.conf
+    SKIP_LETS_ENCRYPT=n
+    ACME_DNS_CHALLENGE=n
+    ```
+  </Tab>
+  <Tab title="DNS-01">
+    The DNS-01 challenge validates domain ownership by creating a TXT record in your DNS zone. Use this when:
+    - Port 80 is unavailable or blocked
+    - You need wildcard certificates (e.g. `*.example.com`)
+    - Your server is on a private network
+
+    **Requirements:**
+    - A supported DNS provider with an API (see [acme.sh DNS providers](https://github.com/acmesh-official/acme.sh/wiki/dnsapi))
+    - Provider-specific API credentials passed as environment variables to the `acme-mailcow` container
+
+    ```bash mailcow.conf
+    ACME_DNS_CHALLENGE=y
+    ACME_DNS_PROVIDER=dns_cf
+    ACME_ACCOUNT_EMAIL=you@example.com
+    ```
+
+    Then add the provider credentials. For Cloudflare:
+
+    ```bash mailcow.conf
+    CF_Token=your-cloudflare-api-token
+    CF_Account_ID=your-account-id
+    ```
+
+    For Azure DNS:
+
+    ```bash mailcow.conf
+    AZUREDNS_SUBSCRIPTIONID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    AZUREDNS_TENANTID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    AZUREDNS_APPID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    AZUREDNS_CLIENTSECRET=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    AZUREDNS_RESOURCEGROUP=your-resource-group
+    AZUREDNS_ZONE=your-zone-name
+    ```
+
+    Restart mailcow after saving changes:
+
+    ```bash
+    docker compose up -d
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Additional SANs and wildcards
+
+Use `ADDITIONAL_SAN` to add extra names to the certificate. You can use wildcard notation that expands across all mail domains managed by mailcow:
+
+```bash mailcow.conf
+# Wildcard expansion: adds imap.example.com, smtp.example.com for every domain
+ADDITIONAL_SAN=imap.*,smtp.*
+
+# Static name only
+ADDITIONAL_SAN=srv1.example.net
+
+# Combined
+ADDITIONAL_SAN=imap.*,srv1.example.com
+```
+
+When you add `example.com` and `example.net` to mailcow with `ADDITIONAL_SAN=imap.*,smtp.*`, the certificate will include `imap.example.com`, `smtp.example.com`, `imap.example.net`, and `smtp.example.net`, plus any domains added in the future.
+
+<Note>
+  `AUTODISCOVER_SAN=y` (the default) automatically adds `autodiscover.*` and `autoconfig.*` for all mail domains. Set it to `n` if a reverse proxy already handles those names or you do not want to mix certificates between services.
+</Note>
+
+---
+
+## SNI support for large installations
+
+By default, mailcow uses a single certificate for all domains. If you manage more than 100 domains, Let's Encrypt's SAN limit may be reached.
+
+Set `ENABLE_SSL_SNI=y` to issue a separate certificate per domain:
+
+```bash mailcow.conf
+ENABLE_SSL_SNI=y
+```
+
+<Warning>
+  With SNI enabled, some email clients cannot connect using alternative hostnames. Dovecot SNI support has known caveats. Read the [Dovecot SNI documentation](https://doc.dovecot.org/admin_manual/ssl/sni_support) before enabling this in production.
+</Warning>
+
+---
+
+## Manual certificates
+
+If you set `SKIP_LETS_ENCRYPT=y`, mailcow will not attempt to obtain certificates. Place your own certificate files in `data/assets/ssl/`:
+
+```
+data/assets/ssl/
+├── cert.pem   # Full certificate chain (leaf + intermediates)
+└── key.pem    # Private key
+```
+
+```bash mailcow.conf
+SKIP_LETS_ENCRYPT=y
+```
+
+Restart mailcow after placing the files:
+
+```bash
+docker compose up -d
+```
+
+<Tip>
+  mailcow ships a self-signed snake-oil certificate as a placeholder (generated by `generate_config.sh`). It is replaced automatically when ACME obtains a valid certificate. If you use manual certificates, the snake-oil placeholder is only copied if `cert.pem` and `key.pem` do not already exist.
+</Tip>
+
+---
+
+## Troubleshooting flags
+
+These variables control ACME validation checks. Enable them only if you understand the implications.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SKIP_IP_CHECK` | `n` | Skip the IPv4 check that verifies your server's public IP before requesting a certificate. |
+| `SKIP_HTTP_VERIFICATION` | `n` | Skip the HTTP reachability check before requesting a certificate. |
+
+<Warning>
+  Enabling `SKIP_IP_CHECK` or `SKIP_HTTP_VERIFICATION` can cause certificate issuance to fail silently or result in rate-limiting from Let's Encrypt if the domain is not actually reachable. Only use these flags for debugging.
+</Warning>

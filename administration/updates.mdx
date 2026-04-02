@@ -1,0 +1,106 @@
+---
+title: "Updating mailcow"
+description: "Update mailcow to the latest version using the included update script."
+---
+
+## Before updating
+
+<Warning>
+  Take a full backup before every update. See [Backup and restore](/administration/backup-restore) for instructions.
+</Warning>
+
+## Running the update
+
+Run `update.sh` from the mailcow installation directory as root:
+
+```bash
+cd /opt/mailcow-dockerized
+./update.sh
+```
+
+The script must be run from the directory containing `mailcow.conf`. If you run it from elsewhere, it will print the correct path and exit.
+
+The update process:
+
+1. Fetches the latest `_modules` from the remote branch.
+2. Pulls updated Docker images.
+3. Stops the stack with `docker compose down`.
+4. Applies any database migrations.
+5. Restarts the stack with `docker compose up -d`.
+
+## Update options
+
+| Flag                    | Description                                                              |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `-c` / `--check`        | Check whether an update is available without applying it.                |
+| `--check-tags`          | Check whether a newer release tag exists.                                |
+| `--stable`              | Switch to the stable (`master`) branch.                                  |
+| `--nightly`             | Switch to the unstable (`nightly`) branch.                               |
+| `--prefetch`            | Pull updated images without applying the update.                         |
+| `--skip-start`          | Apply the update but do not restart the stack afterward.                 |
+| `--skip-ping-check`     | Skip the connectivity check to public DNS resolvers.                     |
+| `--gc`                  | Remove old and unused Docker image tags.                                 |
+| `-f` / `--force`        | Apply the update without confirmation prompts.                           |
+| `-d` / `--dev`          | Developer mode: skip the `_modules` git checkout.                        |
+
+## Branches
+
+| Branch    | Description                                                                 |
+| --------- | --------------------------------------------------------------------------- |
+| `master`  | Stable releases. Recommended for production.                                |
+| `nightly` | Daily builds from the development branch. For testing only.                 |
+
+<Warning>
+  The `nightly` branch is not production-ready. It may contain breaking changes or incomplete features. Do not switch to nightly on a production server.
+</Warning>
+
+To check which branch you are on:
+
+```bash
+git rev-parse --abbrev-ref HEAD
+```
+
+To switch to the stable branch:
+
+```bash
+./update.sh --stable
+```
+
+To switch to the nightly branch:
+
+```bash
+./update.sh --nightly
+```
+
+<Note>
+  Branch switches cannot be combined with `--force`. You must perform a branch switch interactively so you can confirm the action.
+</Note>
+
+## Docker Compose version detection
+
+The update script reads `DOCKER_COMPOSE_VERSION` from `mailcow.conf` to determine whether to use `docker compose` (native plugin) or `docker-compose` (standalone binary). Make sure this value is set correctly in your `mailcow.conf`:
+
+```bash
+# mailcow.conf
+DOCKER_COMPOSE_VERSION=native    # docker compose (plugin)
+# or
+DOCKER_COMPOSE_VERSION=standalone  # docker-compose (standalone)
+```
+
+If this variable is missing or invalid, the restore and update scripts will exit with an error.
+
+## Developer mode
+
+Developer mode skips the `_modules` git checkout step. Use it when testing local changes to the update script:
+
+```bash
+./update.sh --dev
+```
+
+<Note>
+  The `_modules` directory must already exist and be non-empty when using `--dev`. The script exits if it is missing.
+</Note>
+
+## High availability and cold standby
+
+If you run a primary/replica setup, update the primary node first. Confirm the primary is healthy before updating replica nodes. Replica nodes should be updated one at a time.

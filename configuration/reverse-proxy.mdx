@@ -1,0 +1,196 @@
+---
+title: "Reverse proxy setup"
+description: "How to run mailcow behind a reverse proxy when ports 80 and 443 are already used by another service."
+---
+
+Use a reverse proxy in front of mailcow when another service already occupies ports 80 and/or 443 on your host. The reverse proxy forwards HTTP/HTTPS traffic to mailcow's web UI while your existing services continue to use the default ports.
+
+<Warning>
+  Do **not** put Postfix or Dovecot behind an HTTP reverse proxy. Mail protocols (SMTP, IMAP, POP3) communicate over TCP and must not be routed through an HTTP-layer proxy. Only the mailcow **web UI** (nginx-mailcow) is suitable for reverse proxying.
+</Warning>
+
+---
+
+## Key configuration variables
+
+Change these in `mailcow.conf` before deploying mailcow behind a reverse proxy:
+
+| Variable | Default | Description |
+|---|---|---|
+| `HTTP_PORT` | `80` | Host port mailcow's nginx listens on for HTTP. Change to e.g. `8080` if port 80 is occupied. |
+| `HTTPS_PORT` | `443` | Host port mailcow's nginx listens on for HTTPS. Change to e.g. `8443` if port 443 is occupied. |
+| `HTTP_BIND` | _(empty)_ | IP address to bind HTTP on. Set to `127.0.0.1` to make mailcow's HTTP port available only to the local reverse proxy. |
+| `HTTPS_BIND` | _(empty)_ | IP address to bind HTTPS on. Set to `127.0.0.1` to restrict access to localhost. |
+| `SKIP_LETS_ENCRYPT` | `n` | Set to `y` if your reverse proxy handles TLS termination and you do not want mailcow to obtain its own certificates. |
+
+<Note>
+  If you keep `SKIP_LETS_ENCRYPT=n` while a reverse proxy handles ports 80/443, mailcow's ACME container cannot complete the HTTP-01 challenge. Either configure the reverse proxy to forward `/.well-known/acme-challenge/` to mailcow, use DNS-01 (`ACME_DNS_CHALLENGE=y`), or set `SKIP_LETS_ENCRYPT=y` and manage certificates in the reverse proxy.
+</Note>
+
+### Example: localhost binding on alternate ports
+
+```bash mailcow.conf
+HTTP_PORT=8080
+HTTP_BIND=127.0.0.1
+HTTPS_PORT=8443
+HTTPS_BIND=127.0.0.1
+SKIP_LETS_ENCRYPT=y
+```
+
+---
+
+## Trusted proxies and real IP forwarding
+
+mailcow's nginx uses the client IP for rate limiting and logging. When traffic arrives through a reverse proxy, nginx sees the proxy's IP instead of the real client IP.
+
+Pass the real client IP using the `X-Forwarded-For` or `X-Real-IP` header and configure nginx-mailcow to trust your proxy. Set the `TRUSTED_PROXIES` environment variable on the `nginx-mailcow` container in `docker-compose.override.yml`:
+
+```yaml docker-compose.override.yml
+services:
+  nginx-mailcow:
+    environment:
+      - TRUSTED_PROXIES=127.0.0.1,::1
+```
+
+To use the PROXY protocol instead of HTTP headers, set:
+
+```yaml docker-compose.override.yml
+services:
+  nginx-mailcow:
+    environment:
+      - NGINX_USE_PROXY_PROTOCOL=y
+```
+
+---
+
+## Reverse proxy examples
+
+<Tabs>
+  <Tab title="Nginx">
+    An nginx virtual host on the host (outside Docker) that proxies to mailcow's nginx listening on `127.0.0.1:8080` and `127.0.0.1:8443`.
+
+    This example assumes your reverse proxy manages TLS and mailcow uses `SKIP_LETS_ENCRYPT=y`.
+
+    ```nginx /etc/nginx/sites-available/mailcow
+    server {
+        listen 80;
+        server_name mail.example.com;
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name mail.example.com;
+
+        ssl_certificate     /etc/ssl/mail.example.com/cert.pem;
+        ssl_certificate_key /etc/ssl/mail.example.com/key.pem;
+
+        # Forward real client IP to mailcow
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $host;
+
+        location / {
+            proxy_pass http://127.0.0.1:8080;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+    ```
+
+    <Note>
+      If you want mailcow to handle TLS itself (keeping `SKIP_LETS_ENCRYPT=n`), proxy to `https://127.0.0.1:8443` and add `proxy_ssl_verify off;` since mailcow uses its own certificate on the internal port.
+    </Note>
+  </Tab>
+  <Tab title="Caddy">
+    Caddy automatically provisions TLS certificates. Configure mailcow to use `SKIP_LETS_ENCRYPT=y` so both services do not compete for the same certificate.
+
+    ```bash mailcow.conf
+    HTTP_PORT=8080
+    HTTP_BIND=127.0.0.1
+    HTTPS_PORT=8443
+    HTTPS_BIND=127.0.0.1
+    SKIP_LETS_ENCRYPT=y
+    ```
+
+    ```caddyfile /etc/caddy/Caddyfile
+    mail.example.com {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    ```
+
+    <Tip>
+      Caddy handles HTTPS automatically. The `reverse_proxy` directive forwards to mailcow's HTTP port (`8080`). Caddy takes care of HTTPS termination and certificate renewal.
+    </Tip>
+  </Tab>
+  <Tab title="Traefik">
+    When running Traefik as a Docker service alongside mailcow, attach the `nginx-mailcow` container to Traefik's network and add labels.
+
+    ```bash mailcow.conf
+    HTTP_PORT=8080
+    HTTP_BIND=127.0.0.1
+    HTTPS_PORT=8443
+    HTTPS_BIND=127.0.0.1
+    SKIP_LETS_ENCRYPT=y
+    ```
+
+    ```yaml docker-compose.override.yml
+    services:
+      nginx-mailcow:
+        networks:
+          - traefik-network
+        labels:
+          - "traefik.enable=true"
+          - "traefik.http.routers.mailcow.rule=Host(`mail.example.com`)"
+          - "traefik.http.routers.mailcow.entrypoints=websecure"
+          - "traefik.http.routers.mailcow.tls.certresolver=letsencrypt"
+          - "traefik.http.services.mailcow.loadbalancer.server.port=8080"
+        environment:
+          - TRUSTED_PROXIES=172.20.0.0/16
+
+    networks:
+      traefik-network:
+        external: true
+    ```
+
+    <Note>
+      Set `TRUSTED_PROXIES` to the Traefik container's IP or the Docker network subnet so mailcow correctly logs the real client IP.
+    </Note>
+  </Tab>
+</Tabs>
+
+---
+
+## Split deployments
+
+In advanced setups you can override the hostnames mailcow's containers use to reach each other. These environment variables can be set on individual containers via `docker-compose.override.yml`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `PHPFPMHOST` | _(internal)_ | Hostname for the PHP-FPM container, used by nginx-mailcow. |
+| `SOGOHOST` | _(internal)_ | Hostname for the SOGo container, used by nginx-mailcow. |
+| `RSPAMDHOST` | _(internal)_ | Hostname for the Rspamd container. |
+| `REDISHOST` | _(internal)_ | Hostname for the Redis container. |
+
+These are relevant only if you are running mailcow components on separate hosts or networks. For standard single-host deployments, leave them at their defaults.
+
+---
+
+## What not to proxy
+
+| Service | Protocol | Notes |
+|---|---|---|
+| Postfix | SMTP (port 25, 465, 587) | Raw TCP. Must be exposed directly on the host, not through an HTTP proxy. |
+| Dovecot | IMAP/POP3 (ports 143, 993, 110, 995) | Raw TCP. Must be exposed directly on the host. |
+| Dovecot | ManageSieve (port 4190) | Raw TCP. Must be exposed directly on the host. |
+| nginx-mailcow | HTTP/HTTPS (ports 80, 443) | Can be placed behind a reverse proxy. |
+
+<Warning>
+  If you use a cloud load balancer or firewall that rewrites the source IP for SMTP connections, Postfix and Dovecot will log and potentially block the wrong IPs. SMTP does not support `X-Forwarded-For`. Ensure SMTP traffic reaches Postfix with the real client IP preserved.
+</Warning>

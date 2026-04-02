@@ -1,0 +1,134 @@
+---
+title: "Spam filtering"
+description: "Configure Rspamd, ClamAV, Olefy, DKIM signing, quarantine, and IP banning in mailcow."
+---
+
+## Overview
+
+mailcow uses three components to filter incoming mail for spam and malware:
+
+| Component | Role                                              | Enabled by default |
+| --------- | ------------------------------------------------- | ------------------ |
+| Rspamd    | Antispam engine, DKIM signing, ARC, greylisting   | Yes                |
+| ClamAV    | Antivirus scanning                                | Yes (`SKIP_CLAMD=n`) |
+| Olefy     | Office document macro scanning via `olevba`       | Yes (`SKIP_OLEFY=n`) |
+
+## Rspamd
+
+Rspamd is the primary antispam engine. It scores incoming messages using multiple checks including DNS blocklists, Bayes classification, DKIM, SPF, and DMARC validation.
+
+The Rspamd web UI is available at `https://your-hostname/rspamd`. You can use it to:
+
+- View live mail processing statistics
+- Inspect scores and symbols applied to individual messages
+- Adjust action thresholds (reject, add header, greylist)
+- Train the Bayes classifier by learning spam and ham
+
+### Spam score thresholds
+
+Thresholds determine what action Rspamd takes based on a message's total score. Configure them in the Rspamd UI under **Configuration > Actions**:
+
+| Action        | Default behavior                                      |
+| ------------- | ----------------------------------------------------- |
+| `greylist`    | Temporarily defer the message for greylisting.        |
+| `add header`  | Accept the message and mark it with a spam header.    |
+| `reject`      | Refuse the message at the SMTP level.                 |
+
+### Training spam and ham
+
+To improve filtering accuracy, you can teach Rspamd what is spam and what is not:
+
+1. Open the Rspamd UI at `https://your-hostname/rspamd`.
+2. Go to **Learn** in the top menu.
+3. Upload a `.eml` file or paste a raw message.
+4. Click **Learn Spam** or **Learn Ham**.
+
+<Tip>
+  Regular training with your actual mail traffic significantly improves Bayes filter accuracy over time.
+</Tip>
+
+### User-level spam settings
+
+Mailbox users can adjust per-mailbox spam score thresholds from their user panel. This allows individual users to set how aggressively spam is filtered for their own mailbox without affecting other users.
+
+## ClamAV
+
+ClamAV scans message attachments for known viruses and malware. It is controlled by the `SKIP_CLAMD` variable in `mailcow.conf`.
+
+```bash
+# mailcow.conf
+SKIP_CLAMD=n   # n = enabled, y = disabled
+```
+
+<Warning>
+  ClamAV requires approximately 1 GB of RAM for its virus signature database. Disable it on memory-constrained hosts by setting `SKIP_CLAMD=y`.
+</Warning>
+
+After changing `SKIP_CLAMD`, recreate the affected containers:
+
+```bash
+docker compose up -d
+```
+
+## Olefy
+
+Olefy analyzes Office documents (`.doc`, `.docx`, `.xls`, etc.) for embedded macros using the `olevba` tool. Rspamd sends attachments to Olefy and uses the result to increase the spam score for documents with suspicious macros.
+
+Olefy listens on port `10055` and is controlled by `SKIP_OLEFY` in `mailcow.conf`:
+
+```bash
+# mailcow.conf
+SKIP_OLEFY=n   # n = enabled, y = disabled
+```
+
+## DKIM signing
+
+Outgoing mail is signed with DKIM on a per-domain basis. DKIM keys are generated from the admin UI under **Configuration > ARC/DKIM Keys**.
+
+Once a key is generated, Rspamd automatically signs outgoing messages for that domain. The corresponding DNS TXT record must be published at `selector._domainkey.yourdomain.com` for receivers to verify the signature.
+
+See [DKIM keys](/administration/domains-mailboxes#dkim-keys) for step-by-step instructions.
+
+## Quarantine
+
+Messages that exceed the reject threshold but are caught before permanent deletion may be placed in quarantine. Admins can review quarantined messages in the admin UI.
+
+The watchdog service can send email notifications when bans are issued. This is controlled by the `WATCHDOG_NOTIFY_BAN` variable in `mailcow.conf`:
+
+```bash
+# mailcow.conf
+WATCHDOG_NOTIFY_BAN=y   # Send email when an IP is banned
+WATCHDOG_NOTIFY_EMAIL=admin@example.com
+```
+
+## Spamhaus DQS
+
+If your server is hosted on a network with a blocked ASN (such as AWS, OVH, or Cloudflare), Spamhaus public DNS blocklists may be unavailable. You can use the Spamhaus Data Query Service (DQS) instead, which provides authenticated access to blocklists.
+
+Set your DQS key in `mailcow.conf`:
+
+```bash
+# mailcow.conf
+SPAMHAUS_DQS_KEY=your-dqs-key-here
+```
+
+The key is passed to both Rspamd and Postfix via environment variables and takes effect after restarting the stack.
+
+## Fail2ban and netfilter-mailcow
+
+mailcow ships with `netfilter-mailcow`, a container that monitors authentication failures across Postfix, Dovecot, and the web UI and bans offending IPs using `nftables`.
+
+`netfilter-mailcow` runs in `host` network mode so it can directly manage firewall rules on the host. There is no separate Fail2ban installation required.
+
+Threshold configuration is available in `mailcow.conf` via the watchdog:
+
+```bash
+# mailcow.conf
+FAIL2BAN_THRESHOLD=1      # Number of failures before a ban
+```
+
+Banned IPs are tracked in Redis and can be reviewed and unblocked from the admin UI under **Configuration > Fail2ban** or via the Rspamd UI.
+
+<Note>
+  `netfilter-mailcow` requires the `privileged: true` flag in Docker Compose and read access to host kernel modules. It will not function correctly in environments that restrict privileged containers.
+</Note>

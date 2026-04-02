@@ -1,0 +1,407 @@
+---
+title: "Sync jobs"
+description: "API endpoints for IMAP migration sync jobs, transport maps, relay hosts, and TLS policy map overrides."
+---
+
+## Sync jobs
+
+Sync jobs migrate email from a remote IMAP server into a local mailcow mailbox using imapsync. They run on a configurable interval and can be used for one-time migrations or ongoing synchronization.
+
+### POST /api/v1/add/syncjob
+
+Create a new sync job.
+
+**Request body**
+
+<ParamField body="username" type="string" required>
+  The local mailcow mailbox that will receive the synced mail (e.g. `user@example.com`).
+</ParamField>
+
+<ParamField body="host1" type="string" required>
+  Hostname of the source IMAP server to sync mail from.
+</ParamField>
+
+<ParamField body="port1" type="string" required>
+  IMAP port on the source server (e.g. `993` for IMAPS, `143` for IMAP with STARTTLS).
+</ParamField>
+
+<ParamField body="user1" type="string" required>
+  Username to authenticate with on the source server.
+</ParamField>
+
+<ParamField body="password1" type="string" required>
+  Password for the source server account.
+</ParamField>
+
+<ParamField body="enc1" type="string" required>
+  Encryption method for the source connection. One of `TLS`, `SSL`, or `PLAIN`.
+</ParamField>
+
+<ParamField body="mins_interval" type="number">
+  Sync interval in minutes. How often the job runs.
+</ParamField>
+
+<ParamField body="subfolder2" type="string">
+  Sync messages into this subfolder on the destination mailbox. Leave empty to sync into the root.
+</ParamField>
+
+<ParamField body="maxage" type="number">
+  Only sync messages this many days old or newer. `0` disables the age filter (sync all).
+</ParamField>
+
+<ParamField body="maxbytespersecond" type="number">
+  Transfer speed limit in bytes per second. `0` means unlimited.
+</ParamField>
+
+<ParamField body="timeout1" type="number">
+  Connection timeout in seconds for the remote (source) server.
+</ParamField>
+
+<ParamField body="timeout2" type="number">
+  Connection timeout in seconds for the local (destination) server.
+</ParamField>
+
+<ParamField body="exclude" type="string">
+  Regular expression matching folder names to exclude from sync (e.g. `(?i)spam|(?i)junk`).
+</ParamField>
+
+<ParamField body="custom_params" type="string">
+  Additional imapsync command-line parameters (e.g. `--dry` for a dry run).
+</ParamField>
+
+<ParamField body="delete2duplicates" type="boolean">
+  Delete duplicate messages on the destination (`--delete2duplicates`).
+</ParamField>
+
+<ParamField body="delete1" type="boolean">
+  Delete messages from the source after they are synced (`--delete1`).
+</ParamField>
+
+<ParamField body="delete2" type="boolean">
+  Delete messages on the destination that are no longer present on the source (`--delete2`).
+</ParamField>
+
+<ParamField body="automap" type="boolean">
+  Attempt to automatically map folder names between source and destination (e.g. "Sent Items" → "Sent") (`--automap`).
+</ParamField>
+
+<ParamField body="skipcrossduplicates" type="boolean">
+  Skip messages that already exist in another folder on the destination (`--skipcrossduplicates`).
+</ParamField>
+
+<ParamField body="subscribeall" type="boolean">
+  Subscribe to all synced folders on the destination (`--subscribeall`).
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  Enable or disable the sync job.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/syncjob \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "user@example.com",
+    "host1": "imap.oldserver.com",
+    "port1": "993",
+    "user1": "olduser@oldserver.com",
+    "password1": "oldpassword",
+    "enc1": "SSL",
+    "mins_interval": "20",
+    "subfolder2": "",
+    "maxage": "0",
+    "maxbytespersecond": "0",
+    "timeout1": "600",
+    "timeout2": "600",
+    "exclude": "(?i)spam|(?i)junk",
+    "delete2duplicates": "1",
+    "delete1": "0",
+    "delete2": "0",
+    "automap": "1",
+    "skipcrossduplicates": "0",
+    "subscribeall": "1",
+    "active": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/syncjobs/all/no\_log
+
+List all sync jobs without including the full imapsync log output (faster for large numbers of jobs).
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/syncjobs/all/no_log \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/edit/syncjob
+
+Update an existing sync job. Send only the fields you want to change inside `attr`.
+
+**Request body**
+
+<ParamField body="items" type="string or array" required>
+  Numeric sync job ID(s) to update. Retrieve IDs using the GET endpoint.
+</ParamField>
+
+<ParamField body="attr" type="object" required>
+  Attributes to change. Accepts the same fields as the create endpoint: `active`, `automap`, `custom_params`, `delete1`, `delete2`, `delete2duplicates`, `enc1`, `exclude`, `host1`, `maxage`, `maxbytespersecond`, `mins_interval`, `password1`, `port1`, `skipcrossduplicates`, `subfolder2`, `subscribeall`, `timeout1`, `timeout2`, `user1`.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/syncjob \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": "1",
+    "attr": {
+      "active": "0",
+      "mins_interval": "60"
+    }
+  }'
+```
+
+---
+
+### POST /api/v1/delete/syncjob
+
+Delete one or more sync jobs by their numeric ID.
+
+**Request body**
+
+Send a JSON array of numeric sync job ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/syncjob \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["6", "9"]'
+```
+
+---
+
+## Transport maps
+
+Transport maps define custom next-hop routing for outbound mail to specific destinations.
+
+### POST /api/v1/add/transport
+
+Create a new transport map entry.
+
+**Request body**
+
+<ParamField body="destination" type="string" required>
+  The destination domain or address to route (e.g. `example.org`).
+</ParamField>
+
+<ParamField body="nexthop" type="string" required>
+  The next-hop relay in `host:port` format (e.g. `relay.example.com:25`).
+</ParamField>
+
+<ParamField body="username" type="string">
+  Username for SMTP authentication on the relay.
+</ParamField>
+
+<ParamField body="password" type="string">
+  Password for SMTP authentication on the relay.
+</ParamField>
+
+<ParamField body="active" type="number">
+  `1` to enable, `0` to disable.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/transport \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "active": "1",
+    "destination": "example.org",
+    "nexthop": "relay.example.org:25",
+    "username": "relayuser",
+    "password": "relaypassword"
+  }'
+```
+
+---
+
+### GET /api/v1/get/transport/\{id\}
+
+List one or all transport map entries. Use `all` to retrieve every entry.
+
+```bash
+curl https://mail.example.com/api/v1/get/transport/all \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/delete/transport
+
+Delete one or more transport map entries by their numeric ID.
+
+**Request body**
+
+Send a JSON array of numeric ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/transport \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["1"]'
+```
+
+---
+
+## Relay hosts
+
+Relay hosts (sender-dependent transports) route outbound mail through a specific SMTP relay, useful when you need to send through a third-party provider.
+
+### POST /api/v1/add/relayhost
+
+Create a new sender-dependent relay host.
+
+**Request body**
+
+<ParamField body="hostname" type="string" required>
+  Relay hostname with port in `host:port` format (e.g. `smtp.provider.com:587`).
+</ParamField>
+
+<ParamField body="username" type="string">
+  Username for SMTP authentication on the relay.
+</ParamField>
+
+<ParamField body="password" type="string">
+  Password for SMTP authentication on the relay.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/relayhost \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "hostname": "smtp.provider.com:587",
+    "username": "myuser",
+    "password": "mypassword"
+  }'
+```
+
+---
+
+### GET /api/v1/get/relayhost/\{id\}
+
+List one or all relay hosts. Use `all` to retrieve every entry.
+
+```bash
+curl https://mail.example.com/api/v1/get/relayhost/all \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/delete/relayhost
+
+Delete one or more relay hosts by their numeric ID.
+
+**Request body**
+
+Send a JSON array of numeric ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/relayhost \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["1"]'
+```
+
+---
+
+## TLS policy maps
+
+TLS policy map overrides force a specific TLS policy for outgoing mail to a destination domain or address, overriding the default opportunistic TLS behavior.
+
+### POST /api/v1/add/tls-policy-map
+
+Create a TLS policy map override.
+
+**Request body**
+
+<ParamField body="dest" type="string" required>
+  The destination domain or email address to apply the policy to.
+</ParamField>
+
+<ParamField body="policy" type="string" required>
+  TLS policy to enforce. One of `none`, `may`, `encrypt`, `dane`, `'dane`, `fingerprint`, `verify`, `secure`. See the [Postfix smtp_tls_policy_maps documentation](http://www.postfix.org/postconf.5.html#smtp_tls_policy_maps) for details.
+</ParamField>
+
+<ParamField body="parameters" type="string">
+  Additional policy parameters as required by the chosen policy.
+</ParamField>
+
+<ParamField body="active" type="number">
+  `1` to enable, `0` to disable.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/tls-policy-map \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dest": "partner.example.com",
+    "policy": "encrypt",
+    "parameters": "",
+    "active": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/tls-policy-map/\{id\}
+
+List one or all TLS policy map entries. Use `all` to retrieve every entry.
+
+```bash
+curl https://mail.example.com/api/v1/get/tls-policy-map/all \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/delete/tls-policy-map
+
+Delete one or more TLS policy map entries by their numeric ID.
+
+**Request body**
+
+Send a JSON array of numeric ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/tls-policy-map \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["3"]'
+```

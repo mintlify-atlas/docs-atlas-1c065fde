@@ -1,0 +1,128 @@
+---
+title: "Installation"
+description: "Clone the mailcow repository, generate the configuration, and start the full mail server stack with Docker Compose."
+---
+
+Before you begin, make sure your server meets all requirements on the [Prerequisites](/prerequisites) page — including open ports, DNS records, and Docker >= 24.0.0.
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the mailcow repository from GitHub and change into the directory:
+
+    ```bash
+    git clone https://github.com/mailcow/mailcow-dockerized
+    cd mailcow-dockerized
+    ```
+
+    The repository contains the `docker-compose.yml`, `generate_config.sh`, and all supporting configuration files. Keep this directory — it is your mailcow installation directory and must remain in place for updates.
+  </Step>
+
+  <Step title="Choose a branch">
+    mailcow has three branches. You will be prompted to choose one when you run `generate_config.sh` in the next step.
+
+    | Branch | Stability | Notes |
+    |--------|-----------|-------|
+    | `master` | Stable | Recommended for production |
+    | `nightly` | Unstable | Testing builds — not production-ready |
+    | `legacy` | Security updates only | Deprecated |
+
+    <Tip>
+      Use `master` for any production deployment. The `nightly` branch receives frequent updates that may break things.
+    </Tip>
+  </Step>
+
+  <Step title="Generate the configuration">
+    Run the configuration generator. This script creates `mailcow.conf`, generates a self-signed (snake-oil) TLS certificate for bootstrapping, and checks out your chosen branch.
+
+    ```bash
+    ./generate_config.sh
+    ```
+
+    The script will ask you for:
+
+    1. **Mail server hostname (FQDN)** — This is the hostname of your mail server, not your mail domain. For example: `mail.example.com`. It must be a fully qualified domain name with at least one subdomain. An A/AAAA record for this hostname must already exist in DNS.
+
+    2. **Timezone** — The script detects your system timezone and offers it as the default. Press Enter to accept, or type a timezone identifier from the [tz database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
+
+    3. **ClamAV** — If your server has 2.5 GB of RAM or less, the script will prompt you to disable ClamAV to prevent out-of-memory conditions. You can re-enable it later.
+
+    4. **Branch** — Choose `master` (option 1) for a stable production deployment.
+
+    After completing these prompts, the script:
+    - Writes `mailcow.conf` with randomized database and Redis passwords
+    - Generates a 4096-bit RSA snake-oil TLS certificate in `data/assets/ssl/`
+    - Checks out the selected branch
+
+    <Note>
+      `mailcow.conf` is symlinked as `.env` in the installation directory. Docker Compose reads it automatically. The file is chmod 600 — do not make it world-readable.
+    </Note>
+
+    If `mailcow.conf` already exists (for example, if you are re-running the script), the script will prompt you to confirm overwriting it and will back up the existing file as `mailcow.conf_backup`.
+  </Step>
+
+  <Step title="Pull images and start the stack">
+    Pull all Docker images and start every service in the background:
+
+    ```bash
+    docker compose pull
+    docker compose up -d
+    ```
+
+    The first pull may take several minutes depending on your connection speed. Once complete, Docker Compose starts all containers. Allow 1–2 minutes for all services (particularly MariaDB, Rspamd, and ClamAV) to initialize before accessing the UI.
+
+    To watch the startup logs in real time:
+
+    ```bash
+    docker compose logs -f
+    ```
+
+    <Note>
+      If you installed Docker Compose as a standalone binary rather than the plugin, use `docker-compose` (with a hyphen) instead of `docker compose`. mailcow supports both.
+    </Note>
+  </Step>
+
+  <Step title="Access the web UI">
+    Open your browser and navigate to:
+
+    ```
+    https://mail.example.com
+    ```
+
+    Replace `mail.example.com` with the FQDN you entered during configuration.
+
+    Log in with the default credentials:
+
+    | Field | Value |
+    |-------|-------|
+    | Username | `admin` |
+    | Password | `moohoo` |
+
+    <Warning>
+      Change the admin password immediately after your first login. The default password `moohoo` is public knowledge. See [Post-installation](/post-installation) for instructions.
+    </Warning>
+
+    On first startup, the ACME container will attempt to obtain a Let's Encrypt certificate for your hostname. Until it succeeds, your browser will show a security warning for the snake-oil certificate — this is expected. The certificate is usually issued within a few minutes if your DNS records are correct and port 80 is reachable.
+  </Step>
+</Steps>
+
+## Docker version requirement
+
+`generate_config.sh` checks the installed Docker version before proceeding. If Docker is older than version 24.0.0, the script exits with an error:
+
+```
+Cannot find Docker with a Version higher or equals 24.0.0
+mailcow needs a newer Docker version to work properly...
+```
+
+Upgrade Docker Engine from [docs.docker.com](https://docs.docker.com/engine/install/) before retrying.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Post-installation" icon="circle-check" href="/post-installation">
+    Change the admin password, set up SPF/DKIM/DMARC, and add your first domain and mailbox.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration/mailcow-conf">
+    Review all mailcow.conf options to tune ports, networking, and optional services.
+  </Card>
+</CardGroup>

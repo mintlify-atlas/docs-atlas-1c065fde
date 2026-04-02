@@ -1,0 +1,94 @@
+---
+title: "Authentication"
+description: "How to create API keys and authenticate requests to the mailcow API."
+---
+
+Every request to the mailcow API must include an API key in the `X-API-Key` header. Keys are created in the admin UI and tied to an IP allowlist.
+
+## Create an API key
+
+<Steps>
+  <Step title="Log in as admin">
+    Open your mailcow instance and sign in with the administrator account.
+  </Step>
+  <Step title="Open administrator details">
+    Go to **Configuration** → **Access** → **Edit administrator details**.
+  </Step>
+  <Step title="Expand the API section">
+    Scroll to the **API** section. It is collapsed by default — click it to expand.
+  </Step>
+  <Step title="Add allowed IPs">
+    Enter the IP address (or addresses) that are permitted to use the API. Multiple addresses are separated by commas. Requests from any IP not listed here will be rejected with a 401 even if the key is correct.
+  </Step>
+  <Step title="Generate or paste a key">
+    Provide a value for the read-write key, the read-only key, or both. Save your changes.
+  </Step>
+</Steps>
+
+<Note>
+You can also set `API_KEY` and `API_KEY_READ_ONLY` directly in `mailcow.conf` and restart the stack. The values you enter in the UI write to the same variables.
+</Note>
+
+## Key types
+
+<Tabs>
+  <Tab title="Read-write key">
+    The read-write key (`API_KEY`) grants full access to all endpoints — GET, POST (create), POST (edit), and POST (delete).
+
+    Use this key for automation that needs to create or modify resources.
+
+    ```bash
+    curl https://mail.example.com/api/v1/get/domain/all \
+      -H "X-API-Key: your-read-write-key"
+    ```
+  </Tab>
+  <Tab title="Read-only key">
+    The read-only key (`API_KEY_READ_ONLY`) can only call GET endpoints. Any write attempt returns a 401.
+
+    Use this key for monitoring or reporting scripts that should never modify data.
+
+    ```bash
+    curl https://mail.example.com/api/v1/get/mailbox/all \
+      -H "X-API-Key: your-read-only-key"
+    ```
+  </Tab>
+</Tabs>
+
+## Passing the key
+
+Include the key in every request as the `X-API-Key` header:
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/domain \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "example.com", "active": "1", "mailboxes": "10", "quota": "10240", "maxquota": "10240", "defquota": "3072", "aliases": "400"}'
+```
+
+## IP allowlist
+
+The `API_ALLOW_FROM` variable in `mailcow.conf` contains a comma-separated list of IPs that may call the API. If your client's IP is not on the list, the server returns:
+
+```json
+{
+  "type": "error",
+  "msg": "authentication failed"
+}
+```
+
+with HTTP status `401`.
+
+<Warning>
+The IP allowlist is enforced independently of the key. Even a valid key is rejected if the request originates from an IP not in `API_ALLOW_FROM`.
+</Warning>
+
+## 401 response
+
+When authentication fails — wrong key, missing header, or disallowed IP — the API returns HTTP 401 with:
+
+```json
+{
+  "type": "error",
+  "msg": "authentication failed"
+}
+```

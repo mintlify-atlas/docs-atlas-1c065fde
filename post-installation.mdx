@@ -1,0 +1,117 @@
+---
+title: "Post-installation"
+description: "Essential steps after starting mailcow for the first time: change the admin password, configure DNS authentication records, and add your first domain and mailbox."
+---
+
+Complete these steps immediately after your first login to mailcow. Skipping them leaves your server insecure and unable to deliver mail reliably.
+
+<Steps>
+  <Step title="Change the admin password">
+    The default admin credentials are `admin` / `moohoo`. These are public and must be changed before your mailcow instance handles any real mail.
+
+    1. Log in to the mailcow UI at `https://your-hostname` with `admin` / `moohoo`.
+    2. Click **Edit** next to the admin account in the top-right user menu, or navigate to **Access** > **Administrators**.
+    3. Enter a new strong password and save.
+
+    <Warning>
+      Do not skip this step. The default password `moohoo` is documented publicly. Any server reachable from the internet with the default credentials is immediately at risk.
+    </Warning>
+  </Step>
+
+  <Step title="Verify your TLS certificate">
+    During startup, the ACME container (`acme-mailcow`) attempts to obtain a Let's Encrypt certificate for your mail hostname using HTTP-01 validation. This requires:
+
+    - Port 80 reachable from the internet
+    - Your hostname's A/AAAA record pointing to your server's public IP
+    - `SKIP_LETS_ENCRYPT=n` in `mailcow.conf` (the default)
+
+    To check whether the certificate was issued successfully, look at the ACME container logs:
+
+    ```bash
+    docker compose logs acme-mailcow
+    ```
+
+    A successful issuance will show the certificate being copied into place. Once issued, your browser should no longer show a security warning when visiting the UI.
+
+    <Note>
+      If you run a reverse proxy in front of mailcow, or if port 80 is occupied by another service, you may need to adjust your ACME configuration. See [SSL/TLS configuration](/configuration/ssl-tls) for alternative setups including DNS-01 challenge support.
+    </Note>
+  </Step>
+
+  <Step title="Add your first domain">
+    Before creating mailboxes, you must add the mail domain (for example, `example.com`) to mailcow.
+
+    1. In the admin UI, navigate to **Configuration** > **Mail Setup**.
+    2. Under the **Domains** tab, click **Add domain**.
+    3. Enter your domain name and adjust quotas if needed, then click **Add domain and restart SOGo**.
+
+    After adding the domain, you can create mailboxes for it:
+
+    1. Click the **Mailboxes** tab.
+    2. Click **Add mailbox**.
+    3. Enter the local part (e.g., `alice`), select the domain, set a password, and save.
+
+    For full details on domain and mailbox options, see [Domains and mailboxes](/administration/domains-mailboxes).
+  </Step>
+
+  <Step title="Generate DKIM keys and configure DNS records">
+    Proper email authentication requires SPF, DKIM, and DMARC DNS records. Without them, your outbound mail is likely to be flagged as spam or rejected by receiving servers.
+
+    **Generate a DKIM key in the mailcow UI:**
+
+    1. Navigate to **Configuration** > **Mail Setup** > **Configuration** tab.
+    2. Find the DKIM section, select your domain, choose a key length (2048 bits recommended), and click **Add**.
+    3. Copy the generated DKIM public key value.
+
+    **Add the following DNS records for each domain:**
+
+    | Record type | Name | Value |
+    |-------------|------|-------|
+    | TXT | `example.com` | `v=spf1 mx ~all` — authorizes your mail server to send for this domain |
+    | TXT | `dkim._domainkey.example.com` | The DKIM public key generated in the mailcow UI |
+    | TXT | `_dmarc.example.com` | `v=DMARC1; p=none; rua=mailto:dmarc@example.com` — start with `p=none` to monitor before enforcing |
+
+    <Tip>
+      Start with `p=none` in your DMARC policy so you can monitor reports without risking mail loss. Once you have confirmed your SPF and DKIM are working correctly, move to `p=quarantine` and then `p=reject`.
+    </Tip>
+
+    DNS changes may take up to 24–48 hours to propagate globally, though in practice they are often visible within minutes.
+  </Step>
+
+  <Step title="Test mail flow">
+    After DNS propagates, verify that your server can send and receive mail correctly.
+
+    **Send a test message:**
+
+    Log in to the SOGo webmail at `https://your-hostname/SOGo` using a mailbox you created, and send a message to an external address (for example, a Gmail account). Check that it arrives and is not marked as spam.
+
+    **Receive a test message:**
+
+    Send a message from an external account to one of your mailboxes, then verify it appears in SOGo or your mail client.
+
+    **Check authentication results:**
+
+    Many services can help verify your SPF, DKIM, and DMARC setup. Send a message to a testing service and review the headers in the reply to confirm that SPF passes, DKIM is signed and verified, and DMARC aligns.
+
+    <Note>
+      If outbound mail is rejected or flagged as spam, check that your server's reverse DNS (PTR record) matches your mail hostname, and that your IP is not listed on common blocklists.
+    </Note>
+  </Step>
+</Steps>
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Domains and mailboxes" icon="inbox" href="/administration/domains-mailboxes">
+    Add additional domains, create aliases, and manage mailbox quotas.
+  </Card>
+  <Card title="SSL/TLS configuration" icon="lock" href="/configuration/ssl-tls">
+    Configure Let's Encrypt, DNS-01 challenges, additional SANs, and SNI support.
+  </Card>
+  <Card title="Spam filtering" icon="shield-halved" href="/administration/spam-filtering">
+    Tune Rspamd rules, manage whitelists and blacklists, and review the quarantine.
+  </Card>
+  <Card title="Backup and restore" icon="database" href="/administration/backup-restore">
+    Set up regular backups and learn how to restore from a backup.
+  </Card>
+</CardGroup>

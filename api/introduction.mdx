@@ -1,0 +1,89 @@
+---
+title: "API overview"
+description: "Introduction to the mailcow REST API — base URL, versioning, authentication, and endpoint groups."
+---
+
+mailcow exposes a REST API that lets you manage every aspect of your mail server programmatically. All endpoints return JSON.
+
+## Base URL
+
+Every request is made against your mailcow hostname:
+
+```
+https://mail.example.com
+```
+
+All paths start with `/api/v1/`.
+
+## API version
+
+The current API version is **v1**. The full path prefix is `/api/v1/`.
+
+## Authentication
+
+Requests are authenticated with an API key passed in the `X-API-Key` header. There are two types of keys:
+
+| Key type | Config variable | Access |
+|---|---|---|
+| Read-write | `API_KEY` | All endpoints (GET, POST) |
+| Read-only | `API_KEY_READ_ONLY` | GET endpoints only |
+
+See [Authentication](/api/authentication) for setup instructions.
+
+## Response format
+
+Every response body is JSON. Write operations return an array of result objects. Each object contains a `type` field:
+
+| Value | Meaning |
+|---|---|
+| `success` | Operation completed successfully |
+| `danger` | Operation failed due to a validation or conflict error |
+| `error` | Operation failed due to an internal or authentication error |
+
+A typical success response:
+
+```json
+[
+  {
+    "type": "success",
+    "msg": ["domain_added", "example.com"],
+    "log": [...]
+  }
+]
+```
+
+A 401 unauthorized response:
+
+```json
+{
+  "type": "error",
+  "msg": "authentication failed"
+}
+```
+
+## IP allowlist
+
+Your client IP must be listed in `API_ALLOW_FROM` in `mailcow.conf`. Requests from unlisted IPs are rejected regardless of the key. See [Authentication](/api/authentication) for details.
+
+## Endpoint groups
+
+| Group | Description |
+|---|---|
+| [Aliases](/api/aliases) | Manage email aliases, time-limited aliases, BCC maps, and recipient maps |
+| Address Rewriting | BCC maps and recipient maps (covered in [Aliases](/api/aliases)) |
+| DKIM | Generate and manage DKIM keys (covered in [Antispam and queue](/api/antispam)) |
+| [Domains](/api/domains) | Create and manage domains, domain admins, and domain policies |
+| Domain Admins | Create domain-scoped administrator accounts (covered in [Domains](/api/domains)) |
+| Domain Policies | Per-domain spam whitelist/blacklist (covered in [Domains](/api/domains)) |
+| [Mailboxes](/api/mailboxes) | Create and manage mailboxes, app passwords, ACLs, and spam scores |
+| Mail Queue | Inspect and flush the Postfix queue (covered in [Antispam and queue](/api/antispam)) |
+| OAuth2 | Register OAuth2 clients |
+| Quarantine | Inspect and release quarantined mail (covered in [Antispam and queue](/api/antispam)) |
+| Rate Limits | Set per-mailbox and per-domain rate limits (covered in [Antispam and queue](/api/antispam)) |
+| Recipient Maps | Address rewriting rules (covered in [Aliases](/api/aliases)) |
+| Relay Hosts | Sender-dependent transports (covered in [Sync jobs](/api/sync-jobs)) |
+| Resources | SOGo room/resource mailboxes |
+| [Sync Jobs](/api/sync-jobs) | IMAP migration jobs, transport maps, relay hosts, TLS policy maps |
+| TLS Policy Maps | Outgoing TLS enforcement per destination (covered in [Sync jobs](/api/sync-jobs)) |
+| Transports | Custom transport maps (covered in [Sync jobs](/api/sync-jobs)) |
+| [Antispam and queue](/api/antispam) | Quarantine, mail queue, Fail2Ban, rate limits, DKIM, container status |

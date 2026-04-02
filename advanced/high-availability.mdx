@@ -1,0 +1,146 @@
+---
+title: 'High availability and replication'
+description: 'Cold standby, Dovecot mailbox replication, Redis replication, and monitoring MySQL replication in mailcow.'
+---
+
+<Warning>
+Full active-active high availability is not officially supported. Cold standby is the recommended and tested approach for disaster recovery.
+</Warning>
+
+## Cold standby
+
+The cold standby script (`create_cold_standby.sh`) syncs a primary mailcow installation to a remote standby server over SSH using rsync. The standby server is kept up to date but remains stopped until a failover is required.
+
+### How it works
+
+The script (`helper-scripts/_cold-standby.sh`) performs the following operations on each run:
+
+1. Validates SSH key permissions and connectivity to the remote host.
+2. Syncs the mailcow base directory to the same path on the remote server.
+3. Creates Docker networks, volumes, and containers on the remote if they do not exist.
+4. Triggers `redis-cli save` on the primary to produce a consistent Redis snapshot.
+5. Iterates over all Docker volumes belonging to the compose project:
+   - **MariaDB** (`mysql-vol-1`): uses `mariabackup` inside a temporary container to produce a consistent backup, then rsyncs it to the remote.
+   - **Rspamd** (`rspamd-vol-1`): synced only when source and destination architectures match.
+   - **All other volumes** (vmail, redis, postfix, crypt, etc.): rsynced directly.
+6. Restarts the Docker daemon on the remote to register new volumes.
+7. Pulls updated images and runs the update/garbage-collection script on the remote.
+
+### Prerequisites
+
+- SSH key-based authentication from the primary to the standby server (key at `/root/.ssh/id_rsa` by default, permissions `600`).
+- `rsync` >= 3.1.0 installed on both primary and standby.
+- `docker` and Docker Compose installed on both servers.
+- GNU `grep` (not BusyBox) on both servers.
+- The standby server must be reachable at the configured hostname and port.
+
+### Configuration
+
+Edit `create_cold_standby.sh` in the mailcow installation directory and set the three environment variables:
+
+```bash
+export REMOTE_SSH_KEY=/root/.ssh/id_rsa
+export REMOTE_SSH_PORT=22
+export REMOTE_SSH_HOST=my.remote.host
+```
+
+The script then calls `helper-scripts/_cold-standby.sh`, which reads `mailcow.conf` automatically.
+
+### Running the sync
+
+Execute the script manually or schedule it with cron:
+
+<Steps>
+  <Step title="Run a manual sync">
+    ```bash
+    /opt/mailcow-dockerized/create_cold_standby.sh
+    ```
+  </Step>
+  <Step title="Schedule with cron (example: every hour)">
+    ```bash
+    0 * * * * /opt/mailcow-dockerized/create_cold_standby.sh >> /var/log/mailcow-standby.log 2>&1
+    ```
+
+    <Note>
+    If you use block-level snapshots on the backup destination, ensure the snapshot runs **after** the cold standby script finishes, not concurrently.
+    </Note>
+  </Step>
+</Steps>
+
+<Warning>
+Architecture mismatch between primary and standby (for example, x86\_64 vs. arm64) will cause the Rspamd volume to be skipped during sync. A warning is printed when this happens.
+</Warning>
+
+### Failover procedure
+
+<Steps>
+  <Step title="Start mailcow on the standby server">
+    SSH into the standby server and bring the stack up:
+
+    ```bash
+    cd /opt/mailcow-dockerized
+    docker compose up -d
+    ```
+  </Step>
+  <Step title="Update DNS records">
+    Point your MX and A/AAAA records to the standby server's IP address. Allow time for DNS propagation.
+  </Step>
+  <Step title="Verify services">
+    Check that all containers are healthy:
+
+    ```bash
+    docker compose ps
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Dovecot replication
+
+Dovecot can replicate mailboxes between two mailcow nodes using `doveadm`. Set the following variables in `mailcow.conf` (or as environment variables passed to `dovecot-mailcow`):
+
+| Variable | Description |
+|---|---|
+| `MAILCOW_REPLICA_IP` | IP address of the replica Dovecot node. |
+| `DOVEADM_REPLICA_PORT` | Port for the doveadm replication service on the replica. |
+
+A replication health check runs every five minutes via the ofelia scheduler (`dovecot_repl_health.schedule: "0 */5 * * * *"`).
+
+The watchdog also exposes a `DOVECOT_REPL_THRESHOLD` variable (default `20`) to trigger an alert when replication falls behind.
+
+---
+
+## Redis replication
+
+To use a Redis replica (for example, a read replica on a cluster node), configure the following variables in `mailcow.conf`:
+
+| Variable | Description |
+|---|---|
+| `REDIS_SLAVEOF_IP` | IP of the Redis master. Leave empty on the master node. |
+| `REDIS_SLAVEOF_PORT` | Port of the Redis master. |
+| `REDISMASTERPASS` | Password for the Redis master (if set). |
+
+These variables are passed to `redis-mailcow`, `dovecot-mailcow`, `postfix-mailcow`, `rspamd-mailcow`, `php-fpm-mailcow`, `sogo-mailcow`, `acme-mailcow`, `netfilter-mailcow`, `watchdog-mailcow`, and `dockerapi-mailcow`.
+
+---
+
+## MySQL replication monitoring
+
+When running MySQL/MariaDB replication between nodes, set the following variable in `mailcow.conf` to enable watchdog checks:
+
+```bash
+WATCHDOG_MYSQL_REPLICATION_CHECKS=y
+```
+
+The watchdog uses a separate `MYSQL_REPLICATION_THRESHOLD` (default `1`) to determine when to raise an alert for replication lag or errors.
+
+---
+
+## Cluster mode
+
+The `php-fpm-mailcow` service accepts a `CLUSTERMODE` environment variable. When set, php-fpm adjusts its behavior for cluster deployments. The `MASTER` variable (default `y`) controls which node runs scheduled tasks such as garbage collection, session cleanup, and imapsync; set it to `n` on replica nodes.
+
+<Info>
+For most use cases, cold standby with periodic sync is the recommended approach. Dovecot mailbox replication and Redis replication provide additional durability but require careful network and firewall configuration between nodes.
+</Info>

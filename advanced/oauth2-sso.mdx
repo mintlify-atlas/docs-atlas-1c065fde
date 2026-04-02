@@ -1,0 +1,126 @@
+---
+title: 'OAuth2 and SSO'
+description: 'Use mailcow as an OAuth2 provider, configure Keycloak and LDAP sync, and manage OAuth2 clients via the API.'
+---
+
+## Overview
+
+mailcow acts as an **OAuth2 provider**: external applications can authenticate users against mailcow using the authorization code flow. The scope is fixed to `profile`.
+
+The OAuth2 implementation lives in `data/web/oauth/` and consists of three endpoints:
+
+| Endpoint | File | Purpose |
+|---|---|---|
+| `/oauth/authorize` | `authorize.php` | Authorization endpoint — redirects the user to grant access |
+| `/oauth/token` | `token.php` | Token endpoint — exchanges authorization codes for access tokens |
+| `/oauth/profile` | `profile.php` | Resource endpoint — returns the authenticated user's profile |
+
+---
+
+## Adding an OAuth2 client
+
+OAuth2 clients are managed through the mailcow API. Only admin-role sessions can create, edit, or delete clients.
+
+When a client is created, mailcow generates a random `client_id` (12 hex characters) and `client_secret` (24 hex characters). The only required field is `redirect_uri`. The scope is always `profile`.
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/oauth2-client \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"redirect_uri": "https://app.example.com/callback"}'
+```
+
+### Managing existing clients
+
+| Action | API endpoint |
+|---|---|
+| List client IDs | `GET /api/v1/get/oauth2-client/all` |
+| Edit redirect URI | `POST /api/v1/edit/oauth2-client` |
+| Revoke all tokens for a client | `POST /api/v1/edit/oauth2-client` with `revoke_tokens: true` |
+| Renew client secret | `POST /api/v1/edit/oauth2-client` with `renew_secret: true` |
+| Delete a client | `POST /api/v1/delete/oauth2-client` |
+
+---
+
+## Keycloak sync
+
+The `php-fpm-mailcow` container runs `keycloak-sync.php` every minute via the ofelia scheduler:
+
+```yaml
+ofelia.job-exec.phpfpm_keycloak_sync.schedule: "0 * * * * *"
+ofelia.job-exec.phpfpm_keycloak_sync.no-overlap: "true"
+ofelia.job-exec.phpfpm_keycloak_sync.command: "/bin/bash -c \"php /crons/keycloak-sync.php || exit 0\""
+```
+
+Configure the Keycloak identity provider connection via the API:
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/identity-provider \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{...}'
+```
+
+---
+
+## LDAP sync
+
+LDAP user synchronization also runs every minute via ofelia:
+
+```yaml
+ofelia.job-exec.phpfpm_ldap_sync.schedule: "0 * * * * *"
+ofelia.job-exec.phpfpm_ldap_sync.no-overlap: "true"
+ofelia.job-exec.phpfpm_ldap_sync.command: "/bin/bash -c \"php /crons/ldap-sync.php || exit 0\""
+```
+
+The `no-overlap: "true"` flag prevents a new sync from starting before the previous one finishes.
+
+---
+
+## Related mailcow.conf settings
+
+### Shared mailbox ACLs
+
+```bash
+# Set this to "allow" to enable the "anyone" pseudo user in ACLs.
+# When enabled, ACLs can be created that apply to all authenticated users.
+# Only enable this on mail hosts used exclusively by one organisation.
+ACL_ANYONE=disallow
+```
+
+The `ACL_ANYONE` variable is consumed by both `sogo-mailcow` and `dovecot-mailcow`.
+
+### Admin login as any user
+
+```bash
+# Allow admins to log into SOGo as any email user (without a password).
+ALLOW_ADMIN_EMAIL_LOGIN=n
+```
+
+<Warning>
+Enabling `ALLOW_ADMIN_EMAIL_LOGIN` gives any mailcow admin full access to any user's mailbox via the SOGo webmail interface. Only enable this if required and understood.
+</Warning>
+
+### WebAuthn hardware key vendor restriction
+
+```bash
+# Only allow hardware security keys from trusted manufacturers.
+# Root certificates for validation go in:
+# data/web/inc/lib/WebAuthn/rootCertificates/
+WEBAUTHN_ONLY_TRUSTED_VENDORS=n
+```
+
+---
+
+## Container status API
+
+To check the current status of all mailcow containers programmatically:
+
+```bash
+curl -X GET https://mail.example.com/api/v1/get/status/containers \
+  -H "X-API-Key: your-api-key"
+```
+
+<Info>
+The `CLUSTERMODE` environment variable on `php-fpm-mailcow` affects session and authentication behavior in multi-node setups. See the [high availability](/advanced/high-availability) page for details.
+</Info>

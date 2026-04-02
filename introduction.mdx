@@ -1,0 +1,64 @@
+---
+title: "Introduction"
+description: "mailcow: dockerized is a complete, self-hosted mail server stack that runs entirely in Docker. Deploy a production-ready mail server with a single command."
+---
+
+mailcow: dockerized is an open-source mail server suite maintained by The Infrastructure Company GmbH. It bundles every component needed to send, receive, filter, and store email — all orchestrated by Docker Compose and managed through a built-in web UI.
+
+The project is released under the **GNU General Public License, Version 3**.
+
+## Included services
+
+mailcow deploys the following containers as part of a single stack:
+
+| Service | Container | Role |
+|---------|-----------|------|
+| Postfix | `postfix-mailcow` | SMTP server — sends and receives email |
+| Dovecot | `dovecot-mailcow` | IMAP/POP3 server with full-text search (Flatcurve/Xapian) |
+| Rspamd | `rspamd-mailcow` | Spam filtering, DKIM signing, and policy enforcement |
+| ClamAV | `clamd-mailcow` | Antivirus scanning for incoming messages |
+| Olefy | `olefy-mailcow` | Office document macro analysis via olevba |
+| SOGo | `sogo-mailcow` | Webmail, CalDAV, CardDAV, and ActiveSync |
+| Nginx | `nginx-mailcow` | Reverse proxy and web UI server |
+| PHP-FPM | `php-fpm-mailcow` | mailcow admin UI backend |
+| MariaDB | `mysql-mailcow` | Relational database for configuration and mail data |
+| Redis | `redis-mailcow` | In-memory store for sessions, rate limits, and logs |
+| Unbound | `unbound-mailcow` | Internal recursive DNS resolver |
+| ACME | `acme-mailcow` | Automatic TLS certificate provisioning via Let's Encrypt |
+| Watchdog | `watchdog-mailcow` | Health monitoring and container restart on failure |
+| Netfilter | `netfilter-mailcow` | iptables/nftables-based fail2ban and network isolation |
+| Postfix TLS Policy | `postfix-tlspol-mailcow` | Enforces SMTP TLS policies for outbound mail |
+| Docker API | `dockerapi-mailcow` | Exposes Docker operations to the admin UI |
+| Ofelia | `ofelia-mailcow` | Cron job scheduler for container tasks |
+| Memcached | `memcached-mailcow` | Object caching for SOGo |
+
+## Architecture overview
+
+All services run on an isolated Docker bridge network (`br-mailcow`) with a private IPv4 subnet (`172.22.1.0/24` by default) and an IPv6 subnet (`fd4d:6169:6c63:6f77::/64` by default). Unbound handles all internal DNS resolution, keeping lookups off public resolvers.
+
+Postfix handles SMTP (ports 25, 465, 587). Dovecot handles IMAP and POP3 (ports 143, 993, 110, 995) as well as Sieve (port 4190). Nginx serves the admin UI and proxies SOGo and Rspamd's web interfaces over HTTPS (ports 80 and 443). The ACME container automatically obtains and renews TLS certificates from Let's Encrypt.
+
+Rspamd sits in the mail path between Postfix and Dovecot, scoring messages and optionally forwarding them to ClamAV and Olefy for virus and macro analysis. DKIM keys are generated and managed through the admin UI.
+
+Netfilter runs in host network mode with elevated privileges so it can manage iptables/nftables rules — banning IPs that trigger rate limits and isolating the mailcow Docker network from other containers on the host.
+
+<Note>
+  mailcow is a registered word mark of The Infrastructure Company GmbH, Parkstr. 42, 47877 Willich, Germany.
+</Note>
+
+## Quick navigation
+
+<CardGroup cols={2}>
+  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
+    System requirements, OS requirements, required ports, and DNS records to prepare before installing.
+  </Card>
+  <Card title="Installation" icon="rocket" href="/installation">
+    Step-by-step guide to clone the repository, generate the configuration, and start the stack.
+  </Card>
+  <Card title="Post-installation" icon="circle-check" href="/post-installation">
+    Change the admin password, configure DNS records, and add your first domain and mailbox.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration/mailcow-conf">
+    All mailcow.conf options: ports, TLS, networking, ClamAV, SOGo, and more.
+  </Card>
+</CardGroup>

@@ -1,0 +1,367 @@
+---
+title: "Mailboxes"
+description: "API endpoints to create, retrieve, update, and delete mailboxes, app passwords, ACLs, and spam filter settings."
+---
+
+## Mailboxes
+
+### POST /api/v1/add/mailbox
+
+Create a new mailbox. The full email address will be `local_part@domain`.
+
+**Request body**
+
+<ParamField body="local_part" type="string" required>
+  The part of the email address before the `@` sign.
+</ParamField>
+
+<ParamField body="domain" type="string" required>
+  The domain name for this mailbox. The domain must already exist.
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Full display name of the mailbox user.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Mailbox password. Required when `authsource` is `mailcow` (the default).
+</ParamField>
+
+<ParamField body="password2" type="string" required>
+  Password confirmation — must match `password`.
+</ParamField>
+
+<ParamField body="quota" type="number" required>
+  Mailbox quota in MB.
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  `1` to activate the mailbox immediately. Default `1`.
+</ParamField>
+
+<ParamField body="authsource" type="string">
+  Authentication source. One of `mailcow` (default), `ldap`, `keycloak`, `generic-oidc`.
+</ParamField>
+
+<ParamField body="force_pw_update" type="boolean">
+  Force the user to set a new password on first login.
+</ParamField>
+
+<ParamField body="tls_enforce_in" type="boolean">
+  Require TLS encryption for inbound email to this mailbox.
+</ParamField>
+
+<ParamField body="tls_enforce_out" type="boolean">
+  Require TLS encryption for outbound email from this mailbox.
+</ParamField>
+
+<ParamField body="tags" type="array">
+  Optional array of tag strings to label the mailbox.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/mailbox \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "local_part": "info",
+    "domain": "example.com",
+    "name": "Info Mailbox",
+    "password": "supersecretpw",
+    "password2": "supersecretpw",
+    "quota": "3072",
+    "active": "1",
+    "force_pw_update": "0",
+    "tls_enforce_in": "1",
+    "tls_enforce_out": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/mailbox/\{id\}
+
+Retrieve one or all mailboxes. Use `all` as `{id}` to list every mailbox, or pass a specific email address.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `id` | Mailbox email address (e.g. `info@example.com`) or `all` |
+
+**Query parameter**
+
+| Parameter | Description |
+|---|---|
+| `tags` | Comma-separated list of tags to filter results |
+
+**Example**
+
+```bash
+# All mailboxes
+curl https://mail.example.com/api/v1/get/mailbox/all \
+  -H "X-API-Key: your-api-key"
+
+# Single mailbox
+curl "https://mail.example.com/api/v1/get/mailbox/info@example.com" \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### GET /api/v1/get/mailbox/all/\{domain\}
+
+List all mailboxes belonging to a specific domain.
+
+```bash
+curl https://mail.example.com/api/v1/get/mailbox/all/example.com \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/edit/mailbox
+
+Update one or more mailboxes. Send only the fields you want to change inside `attr`.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array of mailbox email addresses to update.
+</ParamField>
+
+<ParamField body="attr" type="object" required>
+  Attributes to change. Available fields:
+
+  - `active` (boolean) — enable or disable the mailbox
+  - `name` (string) — display name
+  - `password` (string) — new password
+  - `password2` (string) — new password confirmation
+  - `quota` (number) — new quota in MB
+  - `authsource` (string) — authentication source: `mailcow`, `ldap`, `keycloak`, `generic-oidc`
+  - `force_pw_update` (boolean) — force password change on next login
+  - `sogo_access` (boolean) — enable or disable SOGo webmail access
+  - `sender_acl` (array) — list of allowed sender addresses (e.g. `["default", "alias@example.com", "domain.tld", "*"]`)
+  - `tags` (array) — replace the mailbox tags
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/mailbox \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["info@example.com"],
+    "attr": {
+      "quota": "5120",
+      "active": "1",
+      "name": "Info Account"
+    }
+  }'
+```
+
+---
+
+### POST /api/v1/delete/mailbox
+
+Delete one or more mailboxes.
+
+**Request body**
+
+Send a JSON array of mailbox email address strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/mailbox \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["info@example.com", "sales@example.com"]'
+```
+
+<Warning>
+Deleting a mailbox is permanent and removes all stored email. This action cannot be undone.
+</Warning>
+
+---
+
+## App passwords
+
+App passwords allow mailbox users to authenticate specific applications (e.g. a mail client or CalDAV app) with a separate credential, without exposing the main mailbox password.
+
+### POST /api/v1/add/app-passwd
+
+Create a new app password for a mailbox.
+
+**Request body**
+
+<ParamField body="username" type="string" required>
+  The mailbox email address to create the app password for.
+</ParamField>
+
+<ParamField body="app_name" type="string" required>
+  A label identifying the application (e.g. `thunderbird`).
+</ParamField>
+
+<ParamField body="app_passwd" type="string" required>
+  The app password value.
+</ParamField>
+
+<ParamField body="app_passwd2" type="string" required>
+  App password confirmation — must match `app_passwd`.
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  `1` to enable the app password immediately. Default `1`.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/app-passwd \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "info@example.com",
+    "app_name": "thunderbird",
+    "app_passwd": "randomapppassword123",
+    "app_passwd2": "randomapppassword123",
+    "active": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/app-passwd/all/\{mailbox\}
+
+List all app passwords for a specific mailbox.
+
+```bash
+curl "https://mail.example.com/api/v1/get/app-passwd/all/info@example.com" \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/delete/app-passwd
+
+Delete one or more app passwords by their numeric ID. Retrieve IDs using the GET endpoint above.
+
+**Request body**
+
+Send a JSON array of app password ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/app-passwd \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["1", "2"]'
+```
+
+---
+
+## Mailbox ACLs
+
+ACLs control which self-service features a mailbox user can access in the UI.
+
+### POST /api/v1/edit/user-acl
+
+Set the active ACL permissions for one or more mailboxes. The `user_acl` array replaces the full ACL list — include every permission you want to keep.
+
+**Request body**
+
+<ParamField body="items" type="string or array" required>
+  Mailbox email address(es) to update.
+</ParamField>
+
+<ParamField body="attr.user_acl" type="array" required>
+  List of permission strings to enable. Available values: `spam_alias`, `tls_policy`, `spam_score`, `spam_policy`, `delimiter_action`, `syncjobs`, `eas_reset`, `quarantine`, `sogo_profile_reset`, `quarantine_attachments`, `quarantine_notification`, `app_passwds`, `pushover`.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/user-acl \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": "info@example.com",
+    "attr": {
+      "user_acl": ["spam_alias", "tls_policy", "spam_score", "quarantine", "app_passwds"]
+    }
+  }'
+```
+
+---
+
+## Custom attributes
+
+### POST /api/v1/edit/mailbox/custom-attribute
+
+Set custom key-value attributes on one or more mailboxes. Useful for LDAP attribute mirroring or custom integrations.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array of mailbox email addresses to update.
+</ParamField>
+
+<ParamField body="attr.attribute" type="array" required>
+  Array of attribute key names (e.g. `["role", "department"]`).
+</ParamField>
+
+<ParamField body="attr.value" type="array" required>
+  Array of attribute values, corresponding by index to `attribute` (e.g. `["admin", "engineering"]`).
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/mailbox/custom-attribute \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["info@example.com"],
+    "attr": {
+      "attribute": ["role", "department"],
+      "value": ["admin", "engineering"]
+    }
+  }'
+```
+
+---
+
+## Spam score
+
+### POST /api/v1/edit/spam-score
+
+Set a custom spam filter score threshold for one or more mailboxes. The score format is `"low,high"` (e.g. `"8,15"` means classify as spam above 8, reject above 15).
+
+**Request body**
+
+Send an array with a single object containing `items` (array of mailbox addresses) and `attr.spam_score` (string).
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/spam-score/ \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '[{"items": ["info@example.com"], "attr": {"spam_score": "8,15"}}]'
+```
+
+---
+
+### GET /api/v1/get/spam-score/\{mailbox\}
+
+Get the spam filter score for a specific mailbox. Admin users retrieve the global score when an empty value is passed.
+
+```bash
+curl "https://mail.example.com/api/v1/get/spam-score/info@example.com" \
+  -H "X-API-Key: your-api-key"
+```

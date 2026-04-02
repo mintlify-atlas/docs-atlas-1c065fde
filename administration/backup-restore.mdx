@@ -1,0 +1,134 @@
+---
+title: "Backup and restore"
+description: "Back up and restore mailcow components using the included helper script."
+---
+
+mailcow includes a helper script at `helper-scripts/backup_and_restore.sh` that backs up and restores individual components using Docker volumes.
+
+<Warning>
+  Always take a backup before performing updates or making significant configuration changes.
+</Warning>
+
+## Backup components
+
+| Component | What it contains                                              |
+| --------- | ------------------------------------------------------------- |
+| `vmail`   | All mailbox data stored by Dovecot (`/var/vmail`).            |
+| `mysql`   | The MariaDB database: domains, mailboxes, aliases, settings.  |
+| `redis`   | Rate limit counters and session data.                         |
+| `crypt`   | Mail encryption keys used by Dovecot's mail crypt plugin.     |
+| `rspamd`  | Rspamd state, Bayes data, and learned spam/ham.               |
+| `postfix` | The Postfix mail queue (`/var/spool/postfix`).                |
+
+<Tip>
+  At minimum, back up `vmail` and `mysql`. Together they cover all mail data and the configuration database.
+</Tip>
+
+<Tabs>
+  <Tab title="Backup">
+    ### Running a backup
+
+    Run the backup script from your mailcow installation directory:
+
+    ```bash
+    bash helper-scripts/backup_and_restore.sh backup all
+    ```
+
+    Replace `all` with a specific component name to back up only that component:
+
+    ```bash
+    bash helper-scripts/backup_and_restore.sh backup vmail
+    bash helper-scripts/backup_and_restore.sh backup mysql
+    bash helper-scripts/backup_and_restore.sh backup redis
+    bash helper-scripts/backup_and_restore.sh backup crypt
+    bash helper-scripts/backup_and_restore.sh backup rspamd
+    bash helper-scripts/backup_and_restore.sh backup postfix
+    ```
+
+    The script prompts for a backup destination path if none is set. You can set it in advance using the `MAILCOW_BACKUP_LOCATION` environment variable:
+
+    ```bash
+    MAILCOW_BACKUP_LOCATION=/mnt/backups bash helper-scripts/backup_and_restore.sh backup all
+    ```
+
+    The backup destination must:
+    - Be an absolute path (start with `/`)
+    - Be writable by others (mode `755` or similar)
+
+    Each run creates a timestamped subdirectory, for example:
+    ```
+    /mnt/backups/mailcow-2026-04-02-14-00-00/
+    ```
+
+    ### Pruning old backups
+
+    Use `--delete-days N` to remove backup directories older than N days:
+
+    ```bash
+    bash helper-scripts/backup_and_restore.sh backup all --delete-days 30
+    ```
+
+    ### Parallel compression
+
+    The backup script uses `zstd` for compression. You can control the number of threads with the `THREADS` environment variable:
+
+    ```bash
+    THREADS=4 bash helper-scripts/backup_and_restore.sh backup all
+    ```
+
+    ### Automating backups
+
+    Add a cron job to the host to run backups on a schedule:
+
+    ```bash
+    # Run a full backup every day at 2am, keep 30 days
+    0 2 * * * MAILCOW_BACKUP_LOCATION=/mnt/backups bash /opt/mailcow-dockerized/helper-scripts/backup_and_restore.sh backup all --delete-days 30
+    ```
+  </Tab>
+
+  <Tab title="Restore">
+    ### Running a restore
+
+    Run the restore script from your mailcow installation directory:
+
+    ```bash
+    bash helper-scripts/backup_and_restore.sh restore
+    ```
+
+    The script will:
+
+    1. Prompt you to select a backup directory (listed by timestamp).
+    2. Show which datasets are available in that backup.
+    3. Ask which dataset to restore.
+
+    <Warning>
+      Restoring `mysql` stops the entire mailcow stack. The script updates `mailcow.conf` with database credentials from the backup's `mailcow.conf` before restarting.
+    </Warning>
+
+    ### Component-specific restore notes
+
+    **vmail**: The script stops and restarts `dovecot-mailcow`. After restore, it offers to run `doveadm force-resync -A '*'` to check mailbox integrity. You can also run this manually at any time:
+
+    ```bash
+    docker exec $(docker ps -qf name=dovecot-mailcow) doveadm force-resync -A '*'
+    ```
+
+    **mysql**: The entire stack is stopped with `docker compose down` before the database volume is replaced. After restore, the stack is started again automatically.
+
+    **rspamd**: The script checks whether the backup architecture matches the current host architecture. Rspamd data is not portable between `x86_64` and `aarch64` hosts.
+
+    **redis**: Stops and restarts `redis-mailcow`. Session data and rate limit counters are replaced.
+
+    **crypt**: Stops and restarts `dovecot-mailcow`. If crypt keys do not match the mailbox data, previously encrypted mail may be inaccessible.
+
+    **postfix**: Stops and restarts `postfix-mailcow`. Restores the mail queue.
+
+    ### Setting the backup location for restore
+
+    The same `MAILCOW_BACKUP_LOCATION` variable controls where the script looks for backup directories:
+
+    ```bash
+    MAILCOW_BACKUP_LOCATION=/mnt/backups bash helper-scripts/backup_and_restore.sh restore
+    ```
+  </Tab>
+</Tabs>

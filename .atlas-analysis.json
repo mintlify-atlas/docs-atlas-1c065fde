@@ -1,24 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "mailcow: dockerized",
+  "projectType": "infrastructure",
+  "projectName": "mailcow: dockerized",
+  "projectDescription": "A complete, Docker-based mail server suite combining Postfix, Dovecot, SOGo, Rspamd, ClamAV, and more into a single deployable stack with a web UI and REST API.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#d6ba3e",
-    "light": "#f6f2e7",
-    "dark": "#765944"
-  },
-  "favicon": "https://media.brand.dev/e12a3240-5ad9-423c-bf15-0e06f9a78c6e.png",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/mailcow/mailcow-dockerized"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/mailcow/mailcow-dockerized"
-    }
-  },
+  "primaryColor": "#d6ba3e",
+  "lightColor": "#f6f2e7",
+  "darkColor": "#765944",
   "navigation": {
     "tabs": [
       {
@@ -85,5 +72,34 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Complete mail server stack deployable with Docker Compose",
+    "Web UI for administration (domains, mailboxes, aliases, DKIM, etc.)",
+    "Built-in antispam with Rspamd and antivirus with ClamAV",
+    "Automatic Let's Encrypt SSL/TLS certificate management via ACME",
+    "SOGo groupware with webmail, CalDAV, CardDAV, and ActiveSync",
+    "REST API with read-only and read-write key support",
+    "OAuth2/SSO integration (Keycloak, LDAP)",
+    "Full-text search (FTS) with Dovecot Flatcurve/Xapian",
+    "Watchdog service for automatic container health monitoring and restart",
+    "High availability and replication support"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/add/alias",
+    "POST /api/v1/add/domain",
+    "POST /api/v1/add/mailbox",
+    "POST /api/v1/add/dkim",
+    "POST /api/v1/add/syncjob",
+    "POST /api/v1/edit/mailbox",
+    "POST /api/v1/edit/domain",
+    "POST /api/v1/edit/fail2ban",
+    "POST /api/v1/delete/domain",
+    "POST /api/v1/delete/mailbox",
+    "GET /api/v1/get/domain-admin/all",
+    "GET /api/v1/get/mailq/all",
+    "GET /api/v1/get/quarantine/all",
+    "GET /api/v1/get/status/containers",
+    "GET /api/v1/get/status/version"
+  ]
 }

@@ -1,0 +1,369 @@
+---
+title: "Domains"
+description: "API endpoints to create, retrieve, update, and delete domains, domain admins, and domain antispam policies."
+---
+
+## Domains
+
+### POST /api/v1/add/domain
+
+Create a new mail domain. Optionally configure quotas, alias limits, and rate limiting in the same request.
+
+**Request body**
+
+<ParamField body="domain" type="string" required>
+  Fully qualified domain name (e.g. `example.com`)
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  Set to `1` to activate the domain immediately. Default `1`.
+</ParamField>
+
+<ParamField body="mailboxes" type="number">
+  Maximum number of mailboxes allowed in this domain.
+</ParamField>
+
+<ParamField body="quota" type="number">
+  Total quota for the domain in MB (sum of all mailboxes).
+</ParamField>
+
+<ParamField body="maxquota" type="number">
+  Maximum quota allowed per individual mailbox in MB.
+</ParamField>
+
+<ParamField body="defquota" type="number">
+  Default quota pre-filled in the "add mailbox" form, in MB.
+</ParamField>
+
+<ParamField body="aliases" type="number">
+  Maximum number of aliases allowed in this domain.
+</ParamField>
+
+<ParamField body="backupmx" type="boolean">
+  Set to `1` to configure the domain as a backup MX (relay) instead of a primary domain.
+</ParamField>
+
+<ParamField body="relay_all_recipients" type="boolean">
+  When `backupmx` is enabled, relay mail for all recipients without requiring individual mailboxes.
+</ParamField>
+
+<ParamField body="relay_unknown_only" type="boolean">
+  Relay only non-existing mailboxes. Existing mailboxes are delivered locally.
+</ParamField>
+
+<ParamField body="gal" type="boolean">
+  Enable the global address list. Shares contacts across the domain in SOGo webmail.
+</ParamField>
+
+<ParamField body="rl_value" type="number">
+  Rate limit value (number of messages per `rl_frame`).
+</ParamField>
+
+<ParamField body="rl_frame" type="string">
+  Rate limit time frame. One of `s` (second), `m` (minute), `h` (hour), `d` (day).
+</ParamField>
+
+<ParamField body="restart_sogo" type="number">
+  Set to `1` to restart SOGo after creating the domain so it becomes available in the webmail.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional human-readable description for the domain.
+</ParamField>
+
+<ParamField body="tags" type="array">
+  Optional array of tag strings to label the domain.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/domain \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "example.com",
+    "active": "1",
+    "mailboxes": "10",
+    "quota": "10240",
+    "maxquota": "10240",
+    "defquota": "3072",
+    "aliases": "400",
+    "backupmx": "0",
+    "restart_sogo": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/domain/\{id\}
+
+Retrieve one or all domains. Use `all` as the `{id}` to list every domain, or pass a specific domain name.
+
+**Path parameter**
+
+| Parameter | Description |
+|---|---|
+| `id` | Domain name (e.g. `example.com`) or `all` |
+
+**Query parameter**
+
+| Parameter | Description |
+|---|---|
+| `tags` | Comma-separated list of tags to filter results |
+
+**Example**
+
+```bash
+# All domains
+curl https://mail.example.com/api/v1/get/domain/all \
+  -H "X-API-Key: your-api-key"
+
+# Single domain
+curl https://mail.example.com/api/v1/get/domain/example.com \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/edit/domain
+
+Update one or more existing domains. Send only the attributes you want to change inside `attr`.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array of domain names to update.
+</ParamField>
+
+<ParamField body="attr" type="object" required>
+  Object containing the attributes to change. Accepts the same fields as the create endpoint: `active`, `aliases`, `backupmx`, `defquota`, `description`, `gal`, `mailboxes`, `maxquota`, `quota`, `relay_all_recipients`, `relay_unknown_only`, `relayhost`, `rl_frame`, `rl_value`, `tags`.
+</ParamField>
+
+**Example**
+
+```bash
+# Deactivate a domain
+curl -X POST https://mail.example.com/api/v1/edit/domain \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["example.com"],
+    "attr": {"active": "0"}
+  }'
+```
+
+---
+
+### POST /api/v1/delete/domain
+
+Delete one or more domains. This removes all associated mailboxes and aliases.
+
+**Request body**
+
+Send a JSON array of domain name strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/domain \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["example.com", "example2.com"]'
+```
+
+<Warning>
+Deleting a domain permanently removes all its mailboxes, aliases, and associated data. This action cannot be undone.
+</Warning>
+
+---
+
+## Domain admins
+
+Domain admins have full control over a specific set of domains and can create mailboxes and aliases within them.
+
+### POST /api/v1/add/domain-admin
+
+Create a new domain administrator account.
+
+**Request body**
+
+<ParamField body="username" type="string" required>
+  Username for the new domain admin.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password for the domain admin account.
+</ParamField>
+
+<ParamField body="password2" type="string" required>
+  Password confirmation — must match `password`.
+</ParamField>
+
+<ParamField body="domains" type="string" required>
+  Comma-separated list of domains this admin should manage.
+</ParamField>
+
+<ParamField body="active" type="number">
+  `1` for an active account, `0` for disabled. Default `1`.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/domain-admin \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "adminuser",
+    "password": "securepassword",
+    "password2": "securepassword",
+    "domains": "example.com",
+    "active": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/domain-admin/all
+
+List all domain administrator accounts.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/domain-admin/all \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/edit/domain-admin
+
+Update an existing domain admin. Send only the fields you want to change inside `attr`.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array containing the username of the domain admin to update.
+</ParamField>
+
+<ParamField body="attr" type="object" required>
+  Attributes to change. Available fields:
+
+  - `active` (boolean) — enable or disable the account
+  - `username_new` (string) — rename the admin username
+  - `domains` (array) — replace the full list of managed domains
+  - `password` (string) — new password
+  - `password2` (string) — new password confirmation
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/domain-admin \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["adminuser"],
+    "attr": {
+      "domains": ["example.com", "example2.com"],
+      "active": "1"
+    }
+  }'
+```
+
+---
+
+### POST /api/v1/delete/domain-admin
+
+Delete one or more domain admin accounts.
+
+**Request body**
+
+Send a JSON array of admin usernames.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/domain-admin \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["adminuser"]'
+```
+
+---
+
+## Domain antispam policies
+
+Per-domain allowlists and blocklists control which senders are always accepted or always rejected.
+
+### POST /api/v1/add/domain-policy
+
+Add a sender to a domain's allowlist (`wl`) or blocklist (`bl`).
+
+**Request body**
+
+<ParamField body="domain" type="string" required>
+  The domain to attach the policy to.
+</ParamField>
+
+<ParamField body="object_from" type="string" required>
+  Sender address or wildcard pattern (e.g. `*@baddomain.tld` to match an entire domain).
+</ParamField>
+
+<ParamField body="object_list" type="string" required>
+  `wl` to allowlist the sender, `bl` to blocklist.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/domain-policy \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "example.com",
+    "object_from": "*@spammer.tld",
+    "object_list": "bl"
+  }'
+```
+
+---
+
+### GET /api/v1/get/policy\_bl\_domain/\{domain\}
+
+List all blocklist entries for a domain.
+
+```bash
+curl https://mail.example.com/api/v1/get/policy_bl_domain/example.com \
+  -H "X-API-Key: your-api-key"
+```
+
+### GET /api/v1/get/policy\_wl\_domain/\{domain\}
+
+List all allowlist entries for a domain.
+
+```bash
+curl https://mail.example.com/api/v1/get/policy_wl_domain/example.com \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/delete/domain-policy
+
+Delete one or more domain policy entries by their numeric ID. Retrieve IDs using the GET policy endpoints above.
+
+**Request body**
+
+Send a JSON array of policy ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/domain-policy \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["1", "2"]'
+```

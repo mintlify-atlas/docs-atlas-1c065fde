@@ -1,97 +1,67 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "mailcow: dockerized"
+description: "A complete, self-hosted mail server suite powered by Docker. Combines Postfix, Dovecot, SOGo, Rspamd, ClamAV, and more — deployed in minutes."
 ---
 
-## Setting up
+mailcow is a full-featured, open-source mail server stack that runs entirely in Docker. It bundles everything you need — SMTP, IMAP, antispam, antivirus, webmail, and a REST API — into a single `docker compose up` deployment.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="rocket" href="/installation">
+    Get mailcow running on your server in minutes with Docker Compose.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Prerequisites" icon="list-check" href="/prerequisites">
+    Review system requirements, DNS setup, and firewall rules before you begin.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Configuration" icon="sliders" href="/configuration/mailcow-conf">
+    Customize ports, TLS, networking, and optional services via `mailcow.conf`.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/introduction">
+    Automate domain and mailbox management with the REST API.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What's included
 
-Everything you need to create world-class documentation.
+mailcow bundles a full set of mail server components, all wired together and managed via a web UI:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="Postfix" icon="envelope" href="/installation">
+    SMTP server for sending and receiving email.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Dovecot" icon="inbox" href="/administration/domains-mailboxes">
+    IMAP/POP3 server with full-text search support.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="SOGo" icon="calendar" href="/administration/domains-mailboxes">
+    Webmail, CalDAV, CardDAV, and ActiveSync.
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Rspamd" icon="shield-halved" href="/administration/spam-filtering">
+    Advanced spam filtering with DKIM signing.
   </Card>
-</Columns>
+  <Card title="ClamAV" icon="virus-slash" href="/administration/spam-filtering">
+    Antivirus scanning for incoming email.
+  </Card>
+  <Card title="Let's Encrypt" icon="lock" href="/configuration/ssl-tls">
+    Automatic TLS certificate provisioning via ACME.
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Get started in 4 steps
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Check prerequisites">
+    Ensure your server meets the [system requirements](/prerequisites) and DNS records are configured correctly.
+  </Step>
+  <Step title="Clone and configure">
+    Clone the repository and run `generate_config.sh` to create `mailcow.conf` with your hostname and timezone.
+  </Step>
+  <Step title="Start the stack">
+    Run `docker compose up -d` to pull images and start all services. The web UI is available at `https://your-hostname` within a few minutes.
+  </Step>
+  <Step title="Add your first domain">
+    Log in to the admin UI with `admin` / `moohoo`, then [add a domain and create mailboxes](/administration/domains-mailboxes).
+  </Step>
+</Steps>
+
+<Note>
+  The default admin password is `moohoo`. Change it immediately after your first login.
+</Note>

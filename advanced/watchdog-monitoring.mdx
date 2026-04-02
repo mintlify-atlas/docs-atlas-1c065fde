@@ -1,0 +1,149 @@
+---
+title: 'Watchdog and monitoring'
+description: 'Configure the mailcow watchdog to monitor container health, send notifications, and integrate with external checks.'
+---
+
+## Overview
+
+`watchdog-mailcow` is a dedicated container that monitors all other mailcow services and restarts unhealthy ones. It depends on `postfix-mailcow`, `dovecot-mailcow`, `mysql-mailcow`, `acme-mailcow`, and `redis-mailcow`.
+
+Enable or disable the watchdog in `mailcow.conf`:
+
+```bash
+USE_WATCHDOG=y
+```
+
+`generate_config.sh` sets `USE_WATCHDOG=y` by default in new installations. The watchdog is enabled unless you explicitly set it to `n`.
+
+---
+
+## Health check thresholds
+
+Each service has a threshold: the number of consecutive failed checks before the watchdog takes action (restarts the container and sends a notification). Set these in `mailcow.conf`.
+
+| Variable | Default | Service |
+|---|---|---|
+| `NGINX_THRESHOLD` | `5` | nginx-mailcow |
+| `UNBOUND_THRESHOLD` | `5` | unbound-mailcow |
+| `REDIS_THRESHOLD` | `5` | redis-mailcow |
+| `MYSQL_THRESHOLD` | `5` | mysql-mailcow |
+| `MYSQL_REPLICATION_THRESHOLD` | `1` | MySQL replication lag |
+| `SOGO_THRESHOLD` | `3` | sogo-mailcow |
+| `POSTFIX_THRESHOLD` | `8` | postfix-mailcow |
+| `POSTFIX_TLSPOL_THRESHOLD` | `8` | postfix-tlspol-mailcow |
+| `CLAMD_THRESHOLD` | `15` | clamd-mailcow |
+| `DOVECOT_THRESHOLD` | `12` | dovecot-mailcow |
+| `DOVECOT_REPL_THRESHOLD` | `20` | Dovecot replication |
+| `PHPFPM_THRESHOLD` | `5` | php-fpm-mailcow |
+| `RSPAMD_THRESHOLD` | `5` | rspamd-mailcow |
+| `OLEFY_THRESHOLD` | `5` | olefy-mailcow |
+| `ACME_THRESHOLD` | `1` | acme-mailcow |
+| `RATELIMIT_THRESHOLD` | `1` | Rate limit checks |
+| `FAIL2BAN_THRESHOLD` | `1` | Fail2ban checks |
+| `MAILQ_THRESHOLD` | `20` | Mail queue warning level |
+| `MAILQ_CRIT` | `30` | Mail queue critical level |
+| `EXTERNAL_CHECKS_THRESHOLD` | `1` | External open-relay checks |
+
+---
+
+## Notifications
+
+### Email
+
+```bash
+# Multiple recipients separated by commas — no spaces, no quotation marks.
+WATCHDOG_NOTIFY_EMAIL=ops@example.com,alerts@example.com
+```
+
+Notifications are sent from `watchdog@<MAILCOW_HOSTNAME>`. Mails are sent unsigned (no DKIM). If you use DMARC on your mail hostname, add a separate policy: `v=DMARC1; p=none;` in `_dmarc.<MAILCOW_HOSTNAME>`.
+
+You can also customise the subject line:
+
+```bash
+WATCHDOG_SUBJECT=Watchdog ALERT
+```
+
+### Webhook (Discord, Slack, and others)
+
+```bash
+# POST to this URL with Content-Type: application/json
+WATCHDOG_NOTIFY_WEBHOOK=https://discord.com/api/webhooks/XXXXXXXXXXXXXXXXXXX/XXXX...
+```
+
+The request body is a JSON template set in `WATCHDOG_NOTIFY_WEBHOOK_BODY`. Two variables are interpolated at runtime: `${SUBJECT}` and `${BODY}`.
+
+<Tabs>
+  <Tab title="Discord">
+    ```bash
+    WATCHDOG_NOTIFY_WEBHOOK_BODY='{"username": "mailcow Watchdog", "content": "**${SUBJECT}**\n${BODY}"}'
+    ```
+  </Tab>
+  <Tab title="Slack">
+    ```bash
+    WATCHDOG_NOTIFY_WEBHOOK_BODY='{"text": "*${SUBJECT}*\n${BODY}"}'
+    ```
+  </Tab>
+</Tabs>
+
+### Ban and startup notifications
+
+```bash
+# Notify when an IP is banned (includes a whois lookup of the banned IP).
+WATCHDOG_NOTIFY_BAN=n
+
+# Send a notification when the watchdog itself starts.
+WATCHDOG_NOTIFY_START=y
+```
+
+---
+
+## External checks
+
+```bash
+WATCHDOG_EXTERNAL_CHECKS=n
+```
+
+When set to `y`, the watchdog checks whether mailcow is acting as an open relay. This requires a SAL (Service Access License) from [servercow.de](https://www.servercow.de/mailcow). No data is collected; participation is opt-in and anonymous. External checks only work with unmodified mailcow setups.
+
+<Info>
+The `EXTERNAL_CHECKS_THRESHOLD` variable (default `1`) controls how many consecutive external check failures trigger a notification.
+</Info>
+
+---
+
+## Verbose logging
+
+```bash
+WATCHDOG_VERBOSE=n
+```
+
+Set to `y` to write detailed watchdog output to the container logs. Useful for troubleshooting threshold behaviour.
+
+---
+
+## MySQL replication monitoring
+
+To include MySQL/MariaDB replication state in watchdog checks:
+
+```bash
+WATCHDOG_MYSQL_REPLICATION_CHECKS=y
+```
+
+This is separate from `WATCHDOG_EXTERNAL_CHECKS` and does not require a SAL. See the [high availability](/advanced/high-availability) page for replication setup details.
+
+---
+
+## Container status via API
+
+Retrieve the current health status of all containers:
+
+```bash
+curl -X GET https://mail.example.com/api/v1/get/status/containers \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+## Skipped services
+
+The watchdog respects the `SKIP_*` flags from `mailcow.conf`. Services disabled via `SKIP_CLAMD=y`, `SKIP_OLEFY=y`, `SKIP_SOGO=y`, or `SKIP_LETS_ENCRYPT=y` are excluded from health monitoring automatically.

@@ -1,0 +1,323 @@
+---
+title: "Aliases"
+description: "API endpoints to create, retrieve, update, and delete email aliases, time-limited aliases, BCC maps, and recipient maps."
+---
+
+## Aliases
+
+An alias forwards email from one address to one or more destination addresses. A catchall alias uses the format `@domain.tld` as the address and catches all mail for the domain that does not match any other mailbox or alias.
+
+### POST /api/v1/add/alias
+
+Create a new email alias.
+
+<Note>
+Only one `goto*` option can be used per alias. If you want to learn mail as spam, send only `goto_spam: 1` — do not combine it with `goto` or other goto options.
+</Note>
+
+**Request body**
+
+<ParamField body="address" type="string" required>
+  The alias email address. For a catchall alias, use `@domain.tld`.
+</ParamField>
+
+<ParamField body="goto" type="string">
+  Destination address or addresses. Multiple destinations are comma-separated (e.g. `user1@example.com,user2@example.com`). Required unless using one of the `goto_*` options below.
+</ParamField>
+
+<ParamField body="goto_spam" type="boolean">
+  When `1`, deliver all mail to this alias into Rspamd's spam learning pipeline. Mutually exclusive with `goto`, `goto_null`, `goto_ham`.
+</ParamField>
+
+<ParamField body="goto_null" type="boolean">
+  When `1`, silently discard all mail to this alias. Mutually exclusive with other goto options.
+</ParamField>
+
+<ParamField body="goto_ham" type="boolean">
+  When `1`, deliver all mail to this alias into Rspamd's ham learning pipeline. Mutually exclusive with other goto options.
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  `1` to activate the alias immediately. Default `1`.
+</ParamField>
+
+<ParamField body="sogo_visible" type="boolean">
+  Make this alias visible as a selectable sender in SOGo webmail.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/alias \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "support@example.com",
+    "goto": "info@example.com,helpdesk@example.com",
+    "active": "1"
+  }'
+```
+
+**Catchall example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/alias \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "@example.com",
+    "goto": "info@example.com",
+    "active": "1"
+  }'
+```
+
+---
+
+### POST /api/v1/add/time\_limited\_alias
+
+Create a temporary alias for a mailbox. mailcow generates a random alias address. The alias expires after a set period.
+
+**Request body**
+
+<ParamField body="username" type="string" required>
+  The mailbox email address to create the temporary alias for.
+</ParamField>
+
+<ParamField body="domain" type="string" required>
+  The domain for the temporary alias.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/time_limited_alias \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "info@example.com",
+    "domain": "example.com"
+  }'
+```
+
+---
+
+### GET /api/v1/get/alias/\{id\}
+
+Retrieve one or all aliases. Use `all` to list every alias, or pass a numeric alias ID.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/alias/all \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### GET /api/v1/get/time\_limited\_aliases/\{mailbox\}
+
+List all active time-limited aliases for a mailbox.
+
+```bash
+curl "https://mail.example.com/api/v1/get/time_limited_aliases/info@example.com" \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/edit/alias
+
+Update one or more aliases. Send only the attributes you want to change inside `attr`.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array of numeric alias IDs to update. Retrieve IDs using the GET endpoint.
+</ParamField>
+
+<ParamField body="attr" type="object" required>
+  Attributes to change. Available fields:
+
+  - `active` (boolean) — enable or disable the alias
+  - `address` (string) — change the alias address
+  - `goto` (string) — change the destination address(es), comma-separated
+  - `goto_spam` (boolean) — redirect to spam learning
+  - `goto_null` (boolean) — silently discard
+  - `goto_ham` (boolean) — redirect to ham learning
+  - `private_comment` (string) — internal note visible only to admins
+  - `public_comment` (string) — note visible to domain admins
+  - `sogo_visible` (boolean) — toggle SOGo sender visibility
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/alias \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["6"],
+    "attr": {
+      "active": "1",
+      "goto": "newtarget@example.com"
+    }
+  }'
+```
+
+---
+
+### POST /api/v1/delete/alias
+
+Delete one or more aliases by their numeric ID.
+
+**Request body**
+
+Send a JSON array of numeric alias ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/alias \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["6", "9"]'
+```
+
+---
+
+## BCC maps
+
+BCC maps silently copy all inbound or outbound mail for a domain to a specified address. Useful for compliance archiving.
+
+### POST /api/v1/add/bcc
+
+Create a BCC map for a domain.
+
+**Request body**
+
+<ParamField body="local_dest" type="string" required>
+  The domain whose mail should be BCC'd (e.g. `example.com`).
+</ParamField>
+
+<ParamField body="bcc_dest" type="string" required>
+  The email address to receive the BCC copies.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Direction of the BCC. `sender` to BCC outbound mail, `rcpt` to BCC inbound mail.
+</ParamField>
+
+<ParamField body="active" type="number">
+  `1` to enable, `0` to disable. Default `1`.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/bcc \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "local_dest": "example.com",
+    "bcc_dest": "archive@compliance.example.com",
+    "type": "sender",
+    "active": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/bcc/\{id\}
+
+List one or all BCC maps. Use `all` to retrieve every BCC map.
+
+```bash
+curl https://mail.example.com/api/v1/get/bcc/all \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/delete/bcc
+
+Delete one or more BCC maps by their numeric ID.
+
+**Request body**
+
+Send a JSON array of numeric BCC map ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/bcc \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["3"]'
+```
+
+---
+
+## Recipient maps
+
+Recipient maps transparently rewrite the envelope recipient of incoming mail. All mail sent to `recipient_map_old` is rewritten and delivered to `recipient_map_new`.
+
+### POST /api/v1/add/recipient\_map
+
+Create a recipient map entry.
+
+**Request body**
+
+<ParamField body="recipient_map_old" type="string" required>
+  The original recipient address — the address to rewrite from.
+</ParamField>
+
+<ParamField body="recipient_map_new" type="string" required>
+  The target address — the address to deliver to.
+</ParamField>
+
+<ParamField body="active" type="number">
+  `1` to enable, `0` to disable. Default `1`.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/recipient_map \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient_map_old": "old@example.com",
+    "recipient_map_new": "new@example.com",
+    "active": "1"
+  }'
+```
+
+---
+
+### GET /api/v1/get/recipient\_map/\{id\}
+
+List one or all recipient maps. Use `all` to retrieve every entry.
+
+```bash
+curl https://mail.example.com/api/v1/get/recipient_map/all \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/delete/recipient\_map
+
+Delete one or more recipient map entries by their numeric ID.
+
+**Request body**
+
+Send a JSON array of numeric ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/recipient_map \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["1"]'
+```

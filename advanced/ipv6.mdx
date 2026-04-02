@@ -1,0 +1,153 @@
+---
+title: 'IPv6 configuration'
+description: 'Enable, configure, and troubleshoot IPv6 for mailcow, including Docker daemon requirements, subnet settings, and outgoing SNAT.'
+---
+
+<Warning>
+Configure IPv6 on the host **before** enabling it in mailcow. A misconfigured IPv6 setup can result in an open relay, allowing anyone to send mail through your server.
+</Warning>
+
+## Overview
+
+mailcow includes an IPv6 controller (`_modules/scripts/ipv6_controller.sh`) that detects host IPv6 support and updates `/etc/docker/daemon.json` automatically during `generate_config.sh`. The controller probes external IPv6 connectivity (Google DNS `2001:4860:4860::8888` and Cloudflare DNS `2606:4700:4700::1111`) before enabling IPv6 support.
+
+The `ENABLE_IPV6` setting in `mailcow.conf` controls whether the Docker mailcow network is created with IPv6 enabled.
+
+---
+
+## mailcow.conf variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `ENABLE_IPV6` | `true` | Enable IPv6 on the internal Docker network. Set to `false` to disable entirely. |
+| `IPV6_NETWORK` | `fd4d:6169:6c63:6f77::/64` | Internal IPv6 subnet used by the mailcow Docker network (must be in `fc00::/7`). |
+| `SNAT6_TO_SOURCE` | _(unset)_ | Force a specific IPv6 address for all outgoing connections (source NAT). |
+| `DISABLE_NETFILTER_ISOLATION_RULE` | `n` | Prevent netfilter from adding the iptables/nftables rule that isolates the mailcow Docker network. |
+
+---
+
+## Docker daemon requirements
+
+The `generate_config.sh` script configures `/etc/docker/daemon.json` based on your Docker version:
+
+<Tabs>
+  <Tab title="Docker 28+">
+    ```json
+    {
+      "ipv6": true
+    }
+    ```
+  </Tab>
+  <Tab title="Docker 27">
+    ```json
+    {
+      "ipv6": true,
+      "fixed-cidr-v6": "fd00:dead:beef:c0::/80"
+    }
+    ```
+  </Tab>
+  <Tab title="Docker < 27">
+    ```json
+    {
+      "ipv6": true,
+      "fixed-cidr-v6": "fd00:dead:beef:c0::/80",
+      "ip6tables": true,
+      "experimental": true
+    }
+    ```
+  </Tab>
+</Tabs>
+
+After updating `daemon.json`, Docker must be restarted:
+
+```bash
+systemctl restart docker
+```
+
+---
+
+## Enabling or disabling IPv6
+
+<Steps>
+  <Step title="Edit mailcow.conf">
+    Open `mailcow.conf` and set the desired value:
+
+    ```bash
+    # Enable IPv6
+    ENABLE_IPV6=true
+
+    # Disable IPv6
+    ENABLE_IPV6=false
+    ```
+  </Step>
+  <Step title="Rebuild the Docker stack">
+    A full stack rebuild is required for the network configuration to take effect:
+
+    ```bash
+    docker compose down
+    docker compose up -d
+    ```
+
+    <Warning>
+    `docker compose restart` is **not** sufficient. You must stop and recreate the containers so Docker recreates the network with the updated IPv6 setting.
+    </Warning>
+  </Step>
+</Steps>
+
+---
+
+## Changing the internal IPv6 subnet
+
+The `IPV6_NETWORK` variable sets the private IPv6 subnet for the internal `mailcow-network` Docker bridge network. The default is `fd4d:6169:6c63:6f77::/64`.
+
+```bash
+IPV6_NETWORK=fd4d:6169:6c63:6f77::/64
+```
+
+Use a prefix within the `fc00::/7` range (ULA addresses). After changing this value, rebuild the stack as described above.
+
+---
+
+## Outgoing IPv6 source address (SNAT6)
+
+If your host has multiple IPv6 addresses and you want outgoing mail connections to use a specific one, set `SNAT6_TO_SOURCE` in `mailcow.conf`:
+
+```bash
+SNAT6_TO_SOURCE=2001:db8::1
+```
+
+The `netfilter-mailcow` and `acme-mailcow` services both consume this variable to apply the correct source NAT rules.
+
+---
+
+## Netfilter and iptables/nftables
+
+The `netfilter-mailcow` service runs in host network mode (`network_mode: "host"`) with `privileged: true` to manage iptables and nftables rules, including IPv6 rules. It receives the `IPV6_NETWORK` and `SNAT6_TO_SOURCE` variables.
+
+By default, netfilter adds an isolation rule that prevents containers from being reached by other hosts on the same subnet, even if their ports are bound to localhost.
+
+<Warning>
+Setting `DISABLE_NETFILTER_ISOLATION_RULE=y` removes this isolation. This may expose container ports to other hosts on the same network segment.
+</Warning>
+
+```bash
+# mailcow.conf
+DISABLE_NETFILTER_ISOLATION_RULE=n
+```
+
+---
+
+## How IPv6 detection works
+
+During `generate_config.sh` (and `update.sh`), the IPv6 controller runs the following checks in order:
+
+1. Checks for `/proc/net/if_inet6` and whether IPv6 is administratively disabled (`/proc/sys/net/ipv6/conf/all/disable_ipv6`).
+2. Looks for a default IPv6 route and probes external connectivity.
+3. Checks for a global-scope IPv6 address without a default route (disables IPv6 in this case).
+4. Checks for link-local-only addresses and probes external connectivity.
+
+If the host does not have working IPv6, `ENABLE_IPV6` is set to `false` automatically. You can override this manually in `mailcow.conf` after the fact, but ensure the Docker daemon is configured correctly first.
+
+<Tip>
+To verify your host's IPv6 connectivity, run `ping6 2001:4860:4860::8888` before re-enabling IPv6 in mailcow.
+</Tip>

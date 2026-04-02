@@ -1,0 +1,514 @@
+---
+title: "Antispam and queue"
+description: "API endpoints for quarantine management, mail queue operations, Fail2Ban, rate limits, DKIM, and container status."
+---
+
+## Quarantine
+
+Rspamd moves messages that exceed the spam score threshold into quarantine. The quarantine API lets you inspect, release, or delete these messages.
+
+### GET /api/v1/get/quarantine/all
+
+List all messages currently in quarantine.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/quarantine/all \
+  -H "X-API-Key: your-api-key"
+```
+
+**Response example**
+
+```json
+{
+  "created": 1572688831,
+  "id": 33,
+  "notified": 1,
+  "qid": "8224615004C1",
+  "rcpt": "admin@example.com",
+  "score": 15.48,
+  "sender": "bounces@send.spammer.tld",
+  "subject": "You won!",
+  "virus_flag": 0
+}
+```
+
+---
+
+### POST /api/v1/edit/qitem
+
+Release a quarantined message to the recipient's inbox, or learn it as ham to improve Rspamd's filtering.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array of numeric quarantine item IDs to act on. Retrieve IDs using the GET endpoint above.
+</ParamField>
+
+<ParamField body="attr.action" type="string" required>
+  Action to perform. `release` delivers the message to the inbox. `learnham` submits it to Rspamd's ham training corpus.
+</ParamField>
+
+**Example**
+
+```bash
+# Release a quarantined message
+curl -X POST https://mail.example.com/api/v1/edit/qitem \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["33"],
+    "attr": {"action": "release"}
+  }'
+```
+
+---
+
+### POST /api/v1/delete/qitem
+
+Delete one or more quarantined messages permanently.
+
+**Request body**
+
+Send a JSON array of numeric quarantine item ID strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/qitem \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["33", "34"]'
+```
+
+---
+
+## Mail queue
+
+The mail queue holds messages that Postfix has accepted but not yet delivered. You can inspect, flush, or delete queue items through the API.
+
+### GET /api/v1/get/mailq/all
+
+Retrieve all messages currently in the Postfix mail queue.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/mailq/all \
+  -H "X-API-Key: your-api-key"
+```
+
+**Response example**
+
+```json
+[
+  {
+    "arrival_time": 1570091234,
+    "message_size": 1848,
+    "queue_id": "B98C6260CA1",
+    "queue_name": "incoming",
+    "recipients": ["recipient@example.com"],
+    "sender": "sender@example.com"
+  }
+]
+```
+
+---
+
+### POST /api/v1/edit/mailq
+
+Flush the mail queue. This runs `postqueue -f` and attempts immediate delivery of all queued messages.
+
+**Request body**
+
+<ParamField body="action" type="string" required>
+  Use `flush` to flush the queue.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/mailq \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "flush"}'
+```
+
+---
+
+### POST /api/v1/delete/mailq
+
+Delete all messages in the mail queue. This runs `postsuper -d ALL`.
+
+<Warning>
+This permanently deletes all queued mail. Messages that have not yet been delivered will be lost.
+</Warning>
+
+**Request body**
+
+<ParamField body="action" type="string" required>
+  Use `super_delete` to delete the entire queue.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/mailq \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "super_delete"}'
+```
+
+---
+
+## Fail2Ban
+
+mailcow uses a netfilter-based Fail2Ban implementation that bans IPs after repeated authentication failures.
+
+### GET /api/v1/get/fail2ban
+
+Get the current Fail2Ban configuration and list of permanently banned IPs.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/fail2ban \
+  -H "X-API-Key: your-api-key"
+```
+
+**Response example**
+
+```json
+{
+  "ban_time": 604800,
+  "ban_time_increment": 1,
+  "blacklist": "45.82.153.37/32\n92.118.38.52/32",
+  "max_attempts": 1,
+  "max_ban_time": 604800,
+  "netban_ipv4": 32,
+  "netban_ipv6": 128,
+  "perm_bans": ["45.82.153.37/32"],
+  "retry_window": 7200,
+  "whitelist": "1.1.1.1"
+}
+```
+
+---
+
+### POST /api/v1/edit/fail2ban
+
+Update the Fail2Ban configuration. You can adjust ban times, attempt limits, and manually manage the blacklist and whitelist.
+
+**Request body**
+
+<ParamField body="items" type="string" required>
+  Must be `none` (this endpoint operates on the global Fail2Ban config, not individual items).
+</ParamField>
+
+<ParamField body="attr" type="object" required>
+  Configuration attributes to update:
+
+  - `ban_time` (number) — duration in seconds to ban an IP
+  - `ban_time_increment` (boolean) — increase ban duration with each repeated offense
+  - `max_ban_time` (number) — maximum ban duration in seconds
+  - `max_attempts` (number) — number of failed logins before an IP is banned
+  - `retry_window` (number) — time window in seconds in which failed attempts are counted
+  - `netban_ipv4` (number) — CIDR prefix length for IPv4 network bans (e.g. `32` for single IPs)
+  - `netban_ipv6` (number) — CIDR prefix length for IPv6 network bans
+  - `blacklist` (string) — comma-separated IPs or hostnames to permanently ban
+  - `whitelist` (string) — comma-separated IPs or hostnames to never ban
+</ParamField>
+
+**Example**
+
+```bash
+# Unban an IP by removing it from the blacklist
+curl -X POST https://mail.example.com/api/v1/edit/fail2ban \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": "none",
+    "attr": {
+      "blacklist": "",
+      "whitelist": "192.168.1.0/24"
+    }
+  }'
+```
+
+---
+
+## Rate limits
+
+Rate limits cap how many messages a mailbox or domain can send per time unit, preventing abuse and relay spam.
+
+### GET /api/v1/get/rl-mbox/\{mailbox\}
+
+Get the rate limit settings for a mailbox. Use `all` to retrieve limits for every mailbox.
+
+```bash
+curl "https://mail.example.com/api/v1/get/rl-mbox/info@example.com" \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/edit/rl-mbox
+
+Set the rate limit for one or more mailboxes.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array of mailbox email addresses to update.
+</ParamField>
+
+<ParamField body="attr.rl_value" type="number" required>
+  Maximum number of messages allowed per `rl_frame`.
+</ParamField>
+
+<ParamField body="attr.rl_frame" type="string" required>
+  Time frame for the rate limit. One of `s` (second), `m` (minute), `h` (hour).
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/rl-mbox/ \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["info@example.com"],
+    "attr": {
+      "rl_value": "10",
+      "rl_frame": "h"
+    }
+  }'
+```
+
+---
+
+### GET /api/v1/get/rl-domain/\{domain\}
+
+Get the rate limit settings for a domain. Use `all` to retrieve limits for every domain.
+
+```bash
+curl https://mail.example.com/api/v1/get/rl-domain/example.com \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/edit/rl-domain
+
+Set the rate limit for one or more domains.
+
+**Request body**
+
+<ParamField body="items" type="array" required>
+  Array of domain names to update.
+</ParamField>
+
+<ParamField body="attr.rl_value" type="number" required>
+  Maximum number of messages allowed per `rl_frame`.
+</ParamField>
+
+<ParamField body="attr.rl_frame" type="string" required>
+  Time frame for the rate limit. One of `s` (second), `m` (minute), `h` (hour).
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/edit/rl-domain/ \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": ["example.com"],
+    "attr": {
+      "rl_value": "50",
+      "rl_frame": "h"
+    }
+  }'
+```
+
+---
+
+## DKIM
+
+DKIM (DomainKeys Identified Mail) signs outbound email to prove it originated from your domain. mailcow generates and stores DKIM private keys; you publish the public key in your DNS.
+
+### POST /api/v1/add/dkim
+
+Generate a new DKIM key pair for one or more domains.
+
+**Request body**
+
+<ParamField body="domains" type="string" required>
+  Comma-separated list of domain names to generate DKIM keys for.
+</ParamField>
+
+<ParamField body="dkim_selector" type="string">
+  DKIM selector to use in the DNS record. Default is `dkim`.
+</ParamField>
+
+<ParamField body="key_size" type="number">
+  RSA key size in bits. One of `1024`, `2048`, `3072`, or `4096`. Default `2048`.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/dkim \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domains": "example.com",
+    "dkim_selector": "dkim",
+    "key_size": "2048"
+  }'
+```
+
+---
+
+### GET /api/v1/get/dkim/\{domain\}
+
+Get the DKIM public key and DNS record for a domain.
+
+```bash
+curl https://mail.example.com/api/v1/get/dkim/example.com \
+  -H "X-API-Key: your-api-key"
+```
+
+---
+
+### POST /api/v1/add/dkim\_duplicate
+
+Copy the DKIM key from one domain to another. Useful when multiple domains share the same signing key.
+
+**Request body**
+
+<ParamField body="from_domain" type="string" required>
+  The domain to copy the DKIM key from.
+</ParamField>
+
+<ParamField body="to_domain" type="string" required>
+  The domain to copy the DKIM key to.
+</ParamField>
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/add/dkim_duplicate \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from_domain": "example.com",
+    "to_domain": "alias-domain.com"
+  }'
+```
+
+---
+
+### POST /api/v1/delete/dkim
+
+Delete the DKIM key for one or more domains.
+
+**Request body**
+
+Send a JSON array of domain name strings.
+
+**Example**
+
+```bash
+curl -X POST https://mail.example.com/api/v1/delete/dkim \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '["example.com"]'
+```
+
+<Warning>
+Deleting a DKIM key immediately stops signing outbound email for the affected domain. Remove the corresponding DNS record to avoid validation failures.
+</Warning>
+
+---
+
+## Status
+
+### GET /api/v1/get/status/containers
+
+Get the current health status, image version, and start time of every mailcow Docker container.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/status/containers \
+  -H "X-API-Key: your-api-key"
+```
+
+**Response example (excerpt)**
+
+```json
+{
+  "postfix-mailcow": {
+    "container": "postfix-mailcow",
+    "image": "mailcow/postfix:1.44",
+    "started_at": "2019-12-22T21:00:07.186717617Z",
+    "state": "running",
+    "type": "info"
+  },
+  "rspamd-mailcow": {
+    "container": "rspamd-mailcow",
+    "image": "mailcow/rspamd:1.56",
+    "started_at": "2019-12-22T21:00:12.456075355Z",
+    "state": "running",
+    "type": "info"
+  }
+}
+```
+
+---
+
+### GET /api/v1/get/status/vmail
+
+Get storage usage for the vmail volume.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/status/vmail \
+  -H "X-API-Key: your-api-key"
+```
+
+**Response example**
+
+```json
+{
+  "disk": "/dev/mapper/mail--vg-root",
+  "total": "41G",
+  "type": "info",
+  "used": "11G",
+  "used_percent": "28%"
+}
+```
+
+---
+
+### GET /api/v1/get/status/version
+
+Get the currently running mailcow release version.
+
+**Example**
+
+```bash
+curl https://mail.example.com/api/v1/get/status/version \
+  -H "X-API-Key: your-api-key"
+```
+
+**Response example**
+
+```json
+{
+  "version": "2022-04"
+}
+```

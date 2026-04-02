@@ -1,0 +1,128 @@
+---
+title: "DNS configuration"
+description: "Required and recommended DNS records for a mailcow installation, including SPF, DKIM, DMARC, and autodiscover records."
+---
+
+Correct DNS configuration is essential for reliable mail delivery. Missing or incorrect records will cause mail to be rejected or marked as spam by receiving servers.
+
+---
+
+## Required records
+
+These records must exist before mailcow can send and receive mail.
+
+| Type | Name | Value | Notes |
+|---|---|---|---|
+| `A` | `mail.example.com` | `203.0.113.1` | Must point to your server's public IPv4 address. Replace `mail.example.com` with your `MAILCOW_HOSTNAME`. |
+| `AAAA` | `mail.example.com` | `2001:db8::1` | Required if your server has a public IPv6 address and `ENABLE_IPV6=true`. |
+| `MX` | `example.com` | `10 mail.example.com.` | One MX record per mail domain, pointing to `MAILCOW_HOSTNAME`. Add a record for every domain you manage in mailcow. |
+| `PTR` | _(reverse zone)_ | `mail.example.com.` | Reverse DNS (rDNS) for your server's IP. Set through your hosting provider. Many receiving servers reject mail from IPs without a matching PTR record. |
+
+<Note>
+  `MAILCOW_HOSTNAME` is your mail server's hostname (e.g. `mail.example.com`), not a mail domain. Mail domains are managed in the mailcow admin UI and each needs its own MX record pointing to `MAILCOW_HOSTNAME`.
+</Note>
+
+---
+
+## Recommended records
+
+These records significantly improve deliverability and protect your domains from spoofing.
+
+### SPF
+
+SPF authorises which servers may send mail for a domain.
+
+| Type | Name | Value |
+|---|---|---|
+| `TXT` | `example.com` | `v=spf1 mx ~all` |
+
+If your `MAILCOW_HOSTNAME` is not within the mail domain's MX, use an explicit `a:` record:
+
+```
+v=spf1 a:mail.example.com ~all
+```
+
+`~all` (softfail) is recommended over `-all` (hardfail) until you have confirmed all legitimate sending sources. Add each mail domain you host in mailcow.
+
+### DKIM
+
+DKIM signs outgoing mail so receivers can verify it was not altered in transit.
+
+DKIM keys are generated in the mailcow admin UI:
+
+1. Log in to the mailcow admin UI.
+2. Go to **Configuration** > **ARC/DKIM keys**.
+3. Generate a key for each mail domain.
+4. Copy the displayed TXT record value into your DNS zone.
+
+| Type | Name | Value |
+|---|---|---|
+| `TXT` | `dkim._domainkey.example.com` | `v=DKIM1; k=rsa; p=<public-key>` |
+
+### DMARC
+
+DMARC tells receiving servers what to do with mail that fails SPF or DKIM checks, and where to send aggregate reports.
+
+| Type | Name | Value |
+|---|---|---|
+| `TXT` | `_dmarc.example.com` | `v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com` |
+
+Start with `p=none` (monitoring only) and move to `p=quarantine` or `p=reject` once you have reviewed reports and confirmed no legitimate mail is failing.
+
+<Warning>
+  If you enable watchdog email notifications (`WATCHDOG_NOTIFY_EMAIL`), watchdog mails are sent unsigned (no DKIM). Create a permissive DMARC policy for `MAILCOW_HOSTNAME` itself to prevent those notifications from being rejected:
+
+  ```
+  _dmarc.mail.example.com  TXT  "v=DMARC1; p=none;"
+  ```
+</Warning>
+
+---
+
+## Optional records
+
+### MTA-STS
+
+MTA-STS enforces TLS for inbound SMTP delivery. It requires a `_mta-sts` TXT record and a policy file served over HTTPS at `https://mta-sts.example.com/.well-known/mta-sts.txt`.
+
+| Type | Name | Value |
+|---|---|---|
+| `TXT` | `_mta-sts.example.com` | `v=STSv1; id=20240101000000` |
+
+### TLSRPT
+
+TLSRPT receives reports about TLS connection failures from sending servers.
+
+| Type | Name | Value |
+|---|---|---|
+| `TXT` | `_smtp._tls.example.com` | `v=TLSRPTv1; rua=mailto:tlsrpt@example.com` |
+
+---
+
+## Autodiscover and autoconfig records
+
+When `AUTODISCOVER_SAN=y` (default), mailcow obtains certificates for `autodiscover.*` and `autoconfig.*` subdomains of each mail domain. Add DNS records so email clients can discover settings automatically.
+
+| Type | Name | Value | Purpose |
+|---|---|---|---|
+| `A` or `CNAME` | `autodiscover.example.com` | server IP or `mail.example.com.` | Microsoft Outlook autodiscover |
+| `A` or `CNAME` | `autoconfig.example.com` | server IP or `mail.example.com.` | Mozilla Thunderbird autoconfig |
+| `SRV` | `_autodiscover._tcp.example.com` | `0 1 443 mail.example.com.` | Autodiscover SRV fallback |
+
+<Tip>
+  If you use `ADDITIONAL_SAN=imap.*,smtp.*`, also add A/CNAME records for `imap.example.com` and `smtp.example.com` pointing to your server so that email clients can resolve those names. Do the same for any other wildcard patterns you configure.
+</Tip>
+
+---
+
+## Checklist
+
+Before going live, verify:
+
+- [ ] `A`/`AAAA` record for `MAILCOW_HOSTNAME` resolves to your server
+- [ ] `MX` record for each mail domain points to `MAILCOW_HOSTNAME`
+- [ ] PTR/rDNS record set at your hosting provider
+- [ ] SPF `TXT` record added for each mail domain
+- [ ] DKIM key generated in the admin UI and `TXT` record published
+- [ ] DMARC `TXT` record added for each mail domain
+- [ ] Autodiscover/autoconfig records added (if applicable)

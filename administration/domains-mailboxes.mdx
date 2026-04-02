@@ -1,0 +1,144 @@
+---
+title: "Domains and mailboxes"
+description: "Manage domains, mailboxes, aliases, DKIM keys, and related mail objects from the mailcow admin UI."
+---
+
+## Logging in
+
+Navigate to `https://your-hostname` to reach the mailcow UI. The default admin credentials are:
+
+| Field    | Value    |
+| -------- | -------- |
+| Username | `admin`  |
+| Password | `moohoo` |
+
+<Warning>
+  Change the admin password immediately after your first login. The default password is publicly known.
+</Warning>
+
+## Roles
+
+mailcow has three distinct roles:
+
+| Role         | Description                                                                 |
+| ------------ | --------------------------------------------------------------------------- |
+| Admin        | Full access to all domains, mailboxes, and system settings.                 |
+| Domain admin | Scoped access to one or more specific domains assigned by an admin.         |
+| Mailbox user | Can manage their own mailbox settings, filters, aliases, and app passwords. |
+
+## Adding your first domain and mailbox
+
+<Steps>
+  <Step title="Add a domain">
+    Go to **Configuration > Mail Setup > Domains** and click **Add domain**.
+
+    Fill in the following fields:
+
+    | Field                | Description                                                                 |
+    | -------------------- | --------------------------------------------------------------------------- |
+    | Domain               | The domain name to add (e.g. `example.com`). IDN domains are supported.    |
+    | Description          | Optional label for the domain. Defaults to the domain name if left blank.  |
+    | Max mailboxes        | Maximum number of mailboxes allowed for this domain.                        |
+    | Max aliases          | Maximum number of aliases allowed for this domain.                          |
+    | Domain quota (MiB)   | Total storage quota shared across all mailboxes in the domain.              |
+    | Default mailbox quota (MiB) | Quota assigned to each new mailbox by default.                     |
+    | Max mailbox quota (MiB) | Upper limit for any individual mailbox quota in this domain.            |
+    | Relay settings       | Configure the domain as a backup MX or relay-all recipients if needed.     |
+
+    Click **Add** to save the domain.
+  </Step>
+
+  <Step title="Add a mailbox">
+    Go to **Configuration > Mail Setup > Mailboxes** and click **Add mailbox**.
+
+    Fill in the following fields:
+
+    | Field        | Description                                                      |
+    | ------------ | ---------------------------------------------------------------- |
+    | Local part   | The username portion of the address (before the `@`).            |
+    | Domain       | Select the domain added in the previous step.                    |
+    | Display name | The full name shown in mail clients.                             |
+    | Password     | Set a strong password for this mailbox.                          |
+    | Quota (MiB)  | Storage quota for this mailbox. Must not exceed the domain max.  |
+
+    Click **Add** to create the mailbox. The resulting address will be `localpart@domain`.
+  </Step>
+
+  <Step title="Configure DNS and DKIM">
+    After adding the domain, generate a DKIM key so outgoing mail is signed. See [DKIM keys](#dkim-keys) below for instructions, then add the resulting TXT record to your DNS.
+  </Step>
+</Steps>
+
+## Email aliases
+
+Aliases forward mail from one address to one or more destinations.
+
+Go to **Configuration > Mail Setup > Aliases** and click **Add alias**.
+
+- **Address**: the alias address (e.g. `info@example.com`)
+- **Destination(s)**: one or more target addresses, separated by commas
+
+Aliases can also be set to:
+- Discard mail silently (`goto_null`)
+- Send directly to the spam folder (`goto_spam`)
+- Route to the ham learning queue (`goto_ham`)
+
+### Time-limited aliases
+
+Mailbox users can create temporary alias addresses that expire automatically. These are useful for disposable sign-up addresses. The alias is created with a random local part and an expiry time between 1 and 87,600 hours. Users access this feature under **Mailbox settings > Spam aliases**.
+
+## Domain admins
+
+A domain admin has scoped permissions over one or more domains. They can manage mailboxes, aliases, and settings within their assigned domains, but cannot access other domains or system-level configuration.
+
+To create a domain admin, go to **Configuration > Mail Setup > Domain admins** and click **Add domain admin**. Assign a username, password, and one or more domains.
+
+<Note>
+  Domain admins are stored separately from mailbox users. Their username must not conflict with any existing mailbox address or admin username.
+</Note>
+
+## DKIM keys
+
+DKIM signing lets receiving mail servers verify that outgoing messages were sent by your server.
+
+To generate a DKIM key:
+
+1. Go to **Configuration > ARC/DKIM Keys**.
+2. Select your domain and choose a key size (1024, 2048, or 4096 bits).
+3. Click **Add** to generate the key pair.
+4. Copy the displayed DNS TXT record and add it to your domain's DNS as a `TXT` record at `selector._domainkey.yourdomain.com`.
+
+<Tip>
+  2048-bit keys are recommended for most deployments. Larger keys provide more security but may not be supported by all DNS providers due to TXT record size limits.
+</Tip>
+
+## Sync jobs (IMAP migration)
+
+Sync jobs pull mail from a remote IMAP server into a local mailbox using `imapsync`. This is useful for migrating from another mail provider.
+
+To add a sync job, go to **Configuration > Mail Setup > Sync jobs** (or **Mailbox settings > Sync jobs** as a mailbox user) and configure:
+
+| Field              | Description                                              |
+| ------------------ | -------------------------------------------------------- |
+| Remote host        | Hostname or IP of the source IMAP server.                |
+| Remote user        | Username on the source server.                           |
+| Remote password    | Password for the source account.                         |
+| Port               | IMAP port on the source server.                          |
+| Encryption         | `TLS`, `SSL`, or `PLAIN`.                                |
+| Sync interval      | How often to sync (in minutes, 1–43800).                 |
+| Subscribe all      | Auto-subscribe to all folders found on the remote.       |
+| Delete from source | Remove messages from the source after syncing.           |
+
+Sync jobs run on a schedule managed by the `ofelia` scheduler inside Dovecot.
+
+## Resources
+
+Resources represent shared calendars, rooms, or equipment in SOGo. They are created as special mailbox entries and appear in the SOGo address book for scheduling.
+
+To add a resource, go to **Configuration > Mail Setup > Resources** and click **Add resource**. Set a kind (`location`, `thing`, or `group`) along with the display name and associated domain.
+
+## App passwords
+
+App passwords allow mailbox users to create separate credentials for individual mail clients or applications. This is useful when two-factor authentication or external identity providers (such as Keycloak) are in use, since IMAP and SMTP clients cannot use SSO flows.
+
+Mailbox users can manage app passwords under **Mailbox settings > App passwords**. Each app password is a standalone credential scoped to a single mailbox.

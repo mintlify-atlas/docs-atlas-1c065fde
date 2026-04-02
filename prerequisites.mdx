@@ -1,0 +1,92 @@
+---
+title: "Prerequisites"
+description: "System requirements, OS requirements, required open ports, and DNS records you need before installing mailcow: dockerized."
+---
+
+Review all requirements on this page before running the installer. Missing any of these will cause mailcow to fail to start or deliver mail correctly.
+
+## System requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| RAM | 2 GB | 4 GB or more |
+| Disk | 20 GB | Depends on mail volume |
+| CPU | 1 core (64-bit) | 2+ cores |
+| Architecture | x86_64 (64-bit) | x86_64 (64-bit) |
+
+<Warning>
+  ClamAV requires significant memory. If your server has 2.5 GB of RAM or less, `generate_config.sh` will prompt you to disable ClamAV (`SKIP_CLAMD=y` in `mailcow.conf`). You can re-enable it later by setting `SKIP_CLAMD=n` and restarting the stack. Running ClamAV on a low-memory system risks out-of-memory kills.
+</Warning>
+
+## Operating system
+
+- 64-bit Linux (any distribution supported by Docker)
+- A dedicated server or VPS — mailcow is not designed for shared hosting environments
+
+## Docker requirements
+
+| Software | Minimum version | Notes |
+|----------|----------------|-------|
+| Docker Engine | 24.0.0 | `generate_config.sh` exits if the version is lower |
+| Docker Compose | Any recent version | Both the Compose plugin (`docker compose`) and the standalone binary (`docker-compose`) are supported |
+
+<Note>
+  mailcow detects which Compose variant is installed and sets `DOCKER_COMPOSE_VERSION` in `mailcow.conf` accordingly. You do not need both installed — either the plugin or the standalone binary is sufficient.
+</Note>
+
+To check your installed versions:
+
+```bash
+docker --version
+docker compose version
+```
+
+## Required open ports
+
+The following ports must be reachable from the internet (or from your clients, as appropriate). Ensure your firewall, cloud security group, or hosting provider allows inbound traffic on all of them.
+
+| Port | Protocol | Service | Purpose |
+|------|----------|---------|---------|
+| 25 | TCP | Postfix | SMTP — inbound mail from other mail servers |
+| 80 | TCP | Nginx | HTTP — Let's Encrypt ACME challenge and redirect to HTTPS |
+| 110 | TCP | Dovecot | POP3 |
+| 143 | TCP | Dovecot | IMAP |
+| 443 | TCP | Nginx | HTTPS — admin UI, webmail, ActiveSync, autodiscover |
+| 465 | TCP | Postfix | SMTPS (implicit TLS) |
+| 587 | TCP | Postfix | SMTP Submission (STARTTLS) |
+| 993 | TCP | Dovecot | IMAPS (implicit TLS) |
+| 995 | TCP | Dovecot | POP3S (implicit TLS) |
+| 4190 | TCP | Dovecot | Sieve (mail filter rules) |
+
+<Note>
+  Port 25 must be open for inbound mail delivery. Many cloud providers (AWS, GCP, Azure, Oracle Cloud, and others) block outbound port 25 by default. Check your provider's policy before deploying. You may need to request an unblock or use a dedicated IP.
+</Note>
+
+## DNS records
+
+At a minimum, you need the following DNS records pointing to your server before starting mailcow. The ACME container will attempt to obtain a Let's Encrypt certificate for your mail hostname during first startup and will fail if DNS is not resolvable.
+
+| Record type | Name | Value | Purpose |
+|-------------|------|-------|---------|
+| A (and/or AAAA) | `mail.example.com` | Your server's IPv4 (and/or IPv6) address | Resolves the mail hostname; required for TLS certificate |
+| MX | `example.com` | `mail.example.com` (priority 10) | Directs inbound mail to your server |
+| PTR (rDNS) | Your server IP | `mail.example.com` | Reverse DNS — many receiving mail servers check this |
+
+<Tip>
+  SPF, DKIM, and DMARC records are configured after installation. DKIM keys are generated in the mailcow admin UI. See [Post-installation](/post-installation) for instructions.
+</Tip>
+
+## Spamhaus and blocked ASNs
+
+Spamhaus blocks access to their public DNS blocklists for IP ranges belonging to large cloud providers and hosting networks (including OVH, AWS, Cloudflare, and others). mailcow's `generate_config.sh` automatically checks whether your server's ASN is on this blocklist.
+
+If your ASN is blocked:
+
+- Without a `SPAMHAUS_DQS_KEY` in `mailcow.conf`, mailcow will automatically disable the Spamhaus blocklists in Postfix entirely.
+- With a `SPAMHAUS_DQS_KEY`, Postfix will use the Spamhaus Data Query Service (DQS) API instead of the public DNS blocklists.
+
+<Warning>
+  If you are deploying on a major cloud provider (AWS, OVH, Cloudflare, Hetzner, etc.), register for a free Spamhaus DQS account and add your key to `mailcow.conf` as `SPAMHAUS_DQS_KEY=your-key` before starting the stack. Without this, Postfix will not be able to use Spamhaus reputation lists for spam filtering.
+</Warning>
+
+You can obtain a free DQS key at [spamhaus.com](https://www.spamhaus.com/free-trial/sign-up-for-a-free-data-query-service-account).
